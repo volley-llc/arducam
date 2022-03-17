@@ -1,0 +1,1 @@
+/usr/bin/x86_64-linux-gnu-gcc-7 -g  -rdynamic CMakeFiles/main.dir/main.c.o CMakeFiles/main.dir/controls.c.o CMakeFiles/main.dir/capture.c.o  -o main 
