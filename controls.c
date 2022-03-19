@@ -79,7 +79,7 @@ unsigned int get_ctrl_id(int ctrl){
     return ctrl_id;
 }
 
-int get_ctrl(int fd, int ctrl){
+int get_ctrl(int fd, int ctrl, int* value){
     struct v4l2_control control;
     CLEAR(control);
     control.id = get_ctrl_id(ctrl);
@@ -88,17 +88,18 @@ int get_ctrl(int fd, int ctrl){
 
 
     if (ret == -1) {
-        printf("IOCTL failed, Errno: %d\n", errno);
-        return -100; //handle this
+        perror("IOCTL failed");
+        return errno;
     } else {
 
-        return (control.value);
+        *value = control.value;
+        return 0;
 
     }
 
 }
 
-int set_ctrl(int fd, int ctrl, int value){
+int set_ctrl(int fd, int ctrl, int value, struct ctrl_struct *ctrl_vals){
     struct v4l2_control control;
     CLEAR(control);
     control.id = get_ctrl_id(ctrl);
@@ -108,11 +109,12 @@ int set_ctrl(int fd, int ctrl, int value){
 
 
     if (ret == -1) {
-        printf("IOCTL failed, Errno: %d\n", errno);
-        return -100;
+        perror("IOCTL failed");
+        return errno;
     } else {
 
-        return (control.value);
+        get_ctrl(fd, ctrl, &ctrl_vals->values[ctrl]);
+        return (0);
 
     }
 
@@ -137,8 +139,10 @@ int write_params(int fd){
         "EXPOSURE_AUTO_PRIORITY"};
 
     for (int i =0; i < EXPOSURE_AUTO_PRIORITY; i++){
+        int value;
         printf("%s ",ctrl_strings[i]);
-        printf("%d\n", get_ctrl(fd, i));
+        get_ctrl(fd, i, &value);
+        printf("%d\n", value);
         
         
     }
@@ -150,3 +154,14 @@ int write_params(int fd){
 
 }
 
+struct ctrl_struct* boot_camera(int fd){
+    struct ctrl_struct *ctrl_vals = malloc(sizeof(struct ctrl_struct));
+    
+    for (int i = 0; i < 14; i++){
+        get_ctrl(fd, i, &ctrl_vals->values[i]);
+    }
+
+    return (ctrl_vals);
+
+
+}

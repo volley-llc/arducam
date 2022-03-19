@@ -26,6 +26,11 @@
 
 #include <linux/usb/ch9.h>
 
+struct ctrl_struct{
+int values[14];
+
+};
+
 enum controls{
 BRIGHTNESS,
 CONTRAST,
@@ -45,8 +50,9 @@ EXPOSURE_AUTO_PRIORITY
 
 
 int xioctl(int fd, int request, void *arg);
-int set_ctrl(int fd, int ctrl, int value);
-int get_ctrl(int fd, int ctrl);
+int set_ctrl(int fd, int ctrl, int value, struct ctrl_struct *ctrl_vals);
+int get_ctrl(int fd, int ctrl, int* value);
+struct ctrl_struct* boot_camera(int fd);
 int write_params(int fd);
 
 
