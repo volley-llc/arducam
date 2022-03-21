@@ -81,7 +81,7 @@ int print_caps(int fd)
         fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
         fmt.fmt.pix.width = 1920;
         fmt.fmt.pix.height = 1080;
-        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_SGRBG10;
+        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
         fmt.fmt.pix.field = V4L2_FIELD_NONE;
 
         if (-1 == xioctl(fd, VIDIOC_S_FMT, &fmt))

@@ -26,34 +26,37 @@
 
 #include <linux/usb/ch9.h>
 
-struct ctrl_struct{
-int values[14];
+struct camera{
+    int fd;
+    int values[14];
 
 };
 
 enum controls{
-BRIGHTNESS,
-CONTRAST,
-SATURATION,
-HUE,
-AUTO_WHITE_BALANCE,
-GAMMA,
-GAIN,
-POWER_LINE_FREQUENCY,
-WHITE_BALANCE_TEMPERATURE,
-SHARPNESS,
-BACKLIGHT_COMPENSATION,
-EXPOSURE_AUTO,
-EXPOSURE_ABSOLUTE,
-EXPOSURE_AUTO_PRIORITY
+    BRIGHTNESS,
+    CONTRAST,
+    SATURATION,
+    HUE,
+    AUTO_WHITE_BALANCE,
+    GAMMA,
+    GAIN,
+    POWER_LINE_FREQUENCY,
+    WHITE_BALANCE_TEMPERATURE,
+    SHARPNESS,
+    BACKLIGHT_COMPENSATION,
+    EXPOSURE_AUTO,
+    EXPOSURE_ABSOLUTE,
+    EXPOSURE_AUTO_PRIORITY
 };
 
 
-int xioctl(int fd, int request, void *arg);
-int set_ctrl(int fd, int ctrl, int value, struct ctrl_struct *ctrl_vals);
-int get_ctrl(int fd, int ctrl, int* value);
-struct ctrl_struct* boot_camera(int fd);
-int write_params(int fd);
+int set_ctrl(int ctrl, int value, struct camera *cam);
+int get_ctrl(struct camera *cam, int ctrl, int* value);
+int write_ctrls_to_file(struct camera *cam);
+int load_ctrls_from_file(struct camera *cam);
+int restore_defaults(struct camera *cam);
+struct camera* boot_camera();
+void camera_close(struct camera *cam);
 
 
 #endif

@@ -42,11 +42,10 @@ and 0 on success.
 
 *********CONTROLS.C****************
 ______________________________________________________________________
-int set_ctrl(int fd, int ctrl, int value, struct ctrl_struct *ctrl_vals);
-@param int fd: The camera's file descriptor (usually in /dev mount)
+int set_ctrl(int ctrl, int value, struct camera *cam);
 @param int ctrl: The control to have its value modified (use the control's ENUM code)
 @param int value: The value to which the control will be set
-ctrl_struct *ctrl vals: The structure which holds the current control values.
+@param struct camera *cam: The structure which holds the current control values.
 
 This function changes the existing value in a control's register to a new one.
 The structure which maintains the values (ctrl_vals) will be automatically
@@ -55,8 +54,8 @@ the camera's registers can be observed on the camera's video output in real-time
 
 Returns: exit status.
 ______________________________________________________________________
-int get_ctrl(int fd, int ctrl, int* value);
-@param int fd: The camera's file descriptor (usually in /dev mount)
+int get_ctrl(struct camera *cam, int ctrl, int* value);
+@param struct camera *cam: The structure which holds the current control values.
 @param int ctrl: The control to have its value read (use the control's ENUM code)
 @param int* value: The int pointer in which the control's value will be stored
 after exiting the function.
@@ -65,16 +64,40 @@ This function reads in a value from the camera and stores it in int* value.
 
 Returns: exit status.
 ______________________________________________________________________
-struct ctrl_struct* boot_camera(int fd);
-@param int fd: The camera's file descriptor (usually in /dev mount)
+int write_ctrls_to_file(struct camera *cam)
+@param struct camera *cam: The structure which holds the current control values.
 
-This function initializes the structure that holds the camera's control
-values. All of the camera's control values in the struct will reflect the
-camera's current values.
+Writes the control values stored in @param *cam to a file named
+ctrl_values.txt. This file is located in the build folder.
 
-Returns struct ctrl_struct: the structure which holds the control values.
+returns: exit status.
 ______________________________________________________________________
-int write_params(int fd);
-@param int fd: The camera's file descriptor (usually in /dev mount)
+int load_ctrls_from_file(struct camera *cam)
+@param struct camera *cam: The structure which holds the current control values.
 
-Not implemented
+Loads control values from ctrl_values.txt. Values are places into both the *cam 
+struct's "values" field and the camera's registers.
+
+returns: exit status.
+______________________________________________________________________
+int restore_defaults(struct camera *cam)
+@param struct camera *cam: The structure which holds the current control values.
+
+Restores all values in camera's registers to their defaults. Updates @param
+*cam to reflect these new, default values.
+
+returns: exit status.
+______________________________________________________________________
+struct camera* boot_camera();
+
+This function initializes the structure that holds the camera's file
+descriptor, control values, pixel ratio, and pixel format. All of the 
+camera's control values in the struct will reflect the camera's current
+values.
+
+Returns struct cam: the structure which holds the camera's info.
+______________________________________________________________________
+void camera_close(struct camera *cam)
+@param struct camera *cam: The structure which holds the current control values.
+
+Closes the camera's file descriptor and frees the *cam struct from the heap.
