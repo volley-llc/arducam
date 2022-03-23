@@ -37,8 +37,7 @@ Calls init_mmap and capture_image in succession.
 
 Returns exit status; 1 if error on either of the above function calls
 and 0 on success.
-
-***********************************
+______________________________________________________________________
 
 *********CONTROLS.C****************
 ______________________________________________________________________

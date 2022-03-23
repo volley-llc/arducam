@@ -1,75 +1,27 @@
 #include "controls.h"
 
-uint8_t* buffer;
-
-//get
-//set
-//defaults handling
-//open
-//close
-//get ranges
-
-//IMPORTANT: does saving to and from file mean the video0 file, or a new, raw text file?
-//Also, if we do save to the file, do we want all at once? not at all?
-//should this thing run from the command line?
-
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
 
-char *ctrl_strings[14] ={
-    "BRIGHTNESS ",
-    "CONTRAST ",
-    "SATURATION ",
-    "HUE ",
-    "AUTO_WHITE_BALANCE ",
-    "GAMMA ",
-    "GAIN ",
-    "POWER_LINE_FREQUENCY ",
-    "WHITE_BALANCE_TEMPERATURE ",
-    "SHARPNESS ",
-    "BACKLIGHT_COMPENSATION ",
-    "EXPOSURE_AUTO ",
-    "EXPOSURE_ABSOLUTE ",
-    "EXPOSURE_AUTO_PRIORITY "
-};
+int get_fmt(camera *cam){
+    struct v4l2_format fmt = {0};
+    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    fmt.fmt.pix.width = 1920;
+    fmt.fmt.pix.height = 1080;
+    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
+    fmt.fmt.pix.field = V4L2_FIELD_NONE;
 
-int ctrl_bounds[14][2] = {
-    {-64, 64}, //BRIGHTNESS
-    {0, 64}, //CONTRAST
-    {0, 128}, //SATURATION
-    {-40, 40}, //HUE
-    {0, 1}, //WHITE_BALANCE_TEMPERATURE_AUTO
-    {72, 500}, //GAMMA
-    {0,100}, //GAIN
-    {0,2}, //POWER_LINE_FREQUENCY
-    {2800, 6500}, //WHITE_BALANCE_TEMPERATURE
-    {0,8}, //SHARPNESS
-    {0,2}, //BACKLIGHT_COMPENSATION
-    {0,3}, //EXPOSURE_AUTO
-    {1,5000}, //EXPOSURE_ABSOLUTE
-    {0,1} //EXPOSURE_AUTO_PRIORITY
+    if (-1 == xioctl(cam->fd, VIDIOC_G_FMT, &fmt))
+    {
+        perror("Setting Pixel Format");
+        return 1;
+    }
 
-};
+    printf("%s", fmt.fmt.pix.width);
 
-int ctrl_default[14] = {
-    0, //BRIGHTNESS
-    32, //CONTRAST
-    64, //SATURATION
-    0, //HUE
-    1, //WHITE_BALANCE_TEMPERATURE_AUTO
-    100, //GAMMA
-    0, //GAIN
-    1, //POWER_LINE_FREQUENCY
-    4600, //WHITE_BALANCE_TEMPERATURE
-    3, //SHARPNESS
-    1, //BACKLIGHT_COMPENSATION
-    3, //EXPOSURE_AUTO
-    156, //EXPOSURE_ABSOLUTE
-    0 //EXPOSURE_AUTO_PRIORITY
+}
 
-};
-
-unsigned int get_ctrl_id(int ctrl){
-    unsigned int ctrl_id;
+int get_ctrl_id(ctrl_tag ctrl){
+    int ctrl_id;
     switch(ctrl){
         case BRIGHTNESS:
             ctrl_id = V4L2_CID_BRIGHTNESS;
@@ -116,22 +68,38 @@ unsigned int get_ctrl_id(int ctrl){
         
 
         default:
-            printf("INVALID CONTROL ENTERED");
+            //fprintf(stderr, "Invalid control entered. ");
+            return 1;
 
     }
 
     return ctrl_id;
 }
 
-int get_ctrl(struct camera *cam, int ctrl, int* value){
+int get_ctrl_struct(ctrls_struct *controls, ctrl_tag ctrl){
+    int *ptr = &(controls->brightness);
+    ptr = ptr + ctrl;
+    return *ptr;
+
+}
+
+void set_ctrl_struct(ctrls_struct *controls, ctrl_tag ctrl, int value){
+    int *ptr = &(controls->brightness);
+    ptr = ptr + ctrl;
+    *ptr = value;
+}
+
+int get_ctrl(camera *cam, ctrl_tag ctrl, int* value){
     struct v4l2_control control;
     CLEAR(control);
     control.id = get_ctrl_id(ctrl);
-    
     int ret = ioctl(cam->fd, VIDIOC_G_CTRL, &control);
 
     if (ret == -1) {
-        perror("IOCTL failed");
+        if (control.id == 1)
+            perror("IOCTL failed because of ctrl argument");
+        else
+            perror("IOCTL failed because of value argument");
         return errno;
     } else {
 
@@ -142,7 +110,7 @@ int get_ctrl(struct camera *cam, int ctrl, int* value){
 
 }
 
-int set_ctrl(int ctrl, int value, struct camera *cam){
+int set_ctrl(camera *cam, ctrl_tag ctrl, int value){
     struct v4l2_control control;
     CLEAR(control);
     control.id = get_ctrl_id(ctrl);
@@ -150,47 +118,77 @@ int set_ctrl(int ctrl, int value, struct camera *cam){
 
     int ret = ioctl(cam->fd, VIDIOC_S_CTRL, &control); //set camera's control value to @param value
 
-    if (ctrl == WHITE_BALANCE_TEMPERATURE && cam->values[AUTO_WHITE_BALANCE] == 1){
-        printf("Cannot set WHITE_BALANCE_TEMPERATURE while AUTO_WHITE_BALANCE is on.");
+
+    /////////////////// BEGIN CHECKING FOR EDGE CASES ///////////////////////////////////////
+    if (ctrl == WHITE_BALANCE_TEMPERATURE){
+        int value;
+        get_ctrl(cam, AUTO_WHITE_BALANCE, &value);
+        if (value == 1)
+            fprintf(stderr, "Cannot set WHITE_BALANCE_TEMPERATURE while AUTO_WHITE_BALANCE is on. Set WHITE_BALANCE to 0 to adjust WHITE_BALANCE_TEMPERATURE\n");
+            //I am not returning here because I want to keep errno. 
 
     }
 
-    if (ctrl == EXPOSURE_ABSOLUTE && cam->values[EXPOSURE_AUTO] == 3){
-        printf("Cannot set EXPOSURE_ABSOLUTE while EXPOSURE_AUTO is set to 3. Set EXPOSURE_AUTO to 1 to adjust exposure.");
+    if (ctrl == EXPOSURE_ABSOLUTE){
+        int value;
+        get_ctrl(cam, EXPOSURE_AUTO, &value);
+        if (value == 3)
+            fprintf(stderr, "Cannot set EXPOSURE_ABSOLUTE while EXPOSURE_AUTO is set to 3. Set EXPOSURE_AUTO to 1 to adjust exposure.\n");
+            //I am not returning here because I want to keep errno. 
 
     }
+    ///////////////////// DONE CHECKING FOR EDGE CASES/////////////////////////////////////
 
     if (ret == -1) {
-        perror("IOCTL failed");
+        if (control.id == 1)
+            perror("IOCTL failed because of ctrl argument");
+        else
+            perror("IOCTL failed because of value argument");
         return errno;
+
+        
     } else {
 
-        if (value < ctrl_bounds[ctrl][0]){
-            printf("WARNING: Set value for %s was less than lower bound. %s was automatically set to lower bound: %d\n", 
-            ctrl_strings[ctrl],ctrl_strings[ctrl],ctrl_bounds[ctrl][0]);
+        if (value < cam->controls[ctrl].min_value){
+            fprintf(stderr, "WARNING: Set value for %s was less than lower bound. %s was automatically set to lower bound: %d\n", 
+            cam->controls[ctrl].name, cam->controls[ctrl].name, cam->controls[ctrl].min_value);
         }
 
-        else if (value > ctrl_bounds[ctrl][1]){
-            printf("WARNING: Set value for %s exceeds upper bound. %s was automatically set to upper bound: %d\n"
-            , ctrl_strings[ctrl],ctrl_strings[ctrl],ctrl_bounds[ctrl][1]);
+        else if (value > cam->controls[ctrl].max_value){
+            fprintf(stderr, "WARNING: Set value for %s exceeds upper bound. %s was automatically set to upper bound: %d\n"
+            , cam->controls[ctrl].name, cam->controls[ctrl].name, cam->controls[ctrl].max_value);
         }
 
-        get_ctrl(cam, ctrl, &cam->values[ctrl]); //update the ctrl_vals struct with new value
         return (0);
 
     }
 
 }
 
-int write_ctrls_to_file(struct camera *cam){
+int save_file(camera *cam, const char* fname){
 
-    FILE *out = fopen("ctrl_values.txt", "w+");
+    FILE *out = fopen(fname, "w+");
+    if (out == NULL){
+        perror("Unable to write file");
+        return errno;
+    }
+
+    //error checking loop -- makes sure camera can get all values
+    for (int i = 0; i< CAM_CTRL_COUNT; i++){
+        int value;
+        int ret = get_ctrl(cam, i, &value);
+        if (ret != 0){
+            return -1;
+        }
+    }
     
-
-    for (int i =0; i < EXPOSURE_AUTO_PRIORITY; i++){
-        char val_char[5];
-        sprintf(val_char, "%d\n", cam->values[i]);
-        fputs(ctrl_strings[i], out);
+    //writing loop
+    for (int i =0; i < CAM_CTRL_COUNT; i++){
+        char val_char[10];
+        int value;
+        get_ctrl(cam, i, &value);
+        sprintf(val_char, ":%d\n", value);
+        fputs(cam->controls[i].name, out);
         fputs(val_char, out);
     }
 
@@ -201,20 +199,43 @@ int write_ctrls_to_file(struct camera *cam){
 
 }
 
-int load_ctrls_from_file(struct camera *cam){
+int load_file(camera *cam, const char* fname){
 
-    FILE *in = fopen("ctrl_values.txt", "r");
+    FILE *in = fopen(fname, "r");
     if (in == NULL){
-        perror("Unable to find ctrl_values.txt -- cannot read file");
-        return (-1);
+        perror("Unable to find fname");
+        return errno;
     }
+    //before setting each control to that specified in the file,
+    //we check to make sure the file is formatted correctly
     char line[50];
     int i = 0;
     while (fgets(line, sizeof(line), in) !=NULL){
-        char *ctrl_name = strtok(line, " ");
+            char *ctrl_name = strtok(line, ":");
+            char *ctrl_val_str = strtok(NULL, "\n");
+            if (ctrl_val_str == NULL){
+                fprintf(stderr, "File format error: format should be \"CONTROL_NAME:CONTROL_VALUE\"");
+                return -1;
+            }
+            i = i + 1;
+            if (i > CAM_CTRL_COUNT){
+                fprintf(stderr, "File format error: too many controls");
+                return -1;
+            }
+        }
+    if (i < CAM_CTRL_COUNT){
+            fprintf(stderr, "File format error: too few controls");
+            return -1;
+        }
+
+    //Done checking for formatting errors
+    
+    i = 0;
+    while (fgets(line, sizeof(line), in) !=NULL){
+        char *ctrl_name = strtok(line, ":");
         char *ctrl_val_str = strtok(NULL, "\n");
         int ctrl_val = atoi(ctrl_val_str);
-        set_ctrl(i, ctrl_val, cam);
+        set_ctrl(cam, i, ctrl_val);
         i = i + 1;
     }
 
@@ -222,39 +243,122 @@ int load_ctrls_from_file(struct camera *cam){
 
 }
 
-int restore_defaults(struct camera *cam){
-
-    for (int i = 0; i < EXPOSURE_AUTO_PRIORITY; i++){
-
-        set_ctrl(i, ctrl_default[i], cam);
-
+//cannot fail
+//saves camera control values to struct
+void save_struct(camera *cam, ctrls_struct *controls){
+    for (int i = 0; i < CAM_CTRL_COUNT; i++){
+        int value;
+        get_ctrl(cam, i, &value);
+        
+        set_ctrl_struct(controls, i, value);
     }
+}
 
-    return 0;
+//loads struct values into camera control registers
+//can technically fail, but cannot trigger return because of white_balance_temperature and exposure_absolute
+void load_struct(camera *cam, ctrls_struct *controls){
+    for (int i = 0; i < CAM_CTRL_COUNT; i++){
+        int value = get_ctrl_struct(controls, i);
+        set_ctrl(cam, i, value);
+    }
 
 }
 
-//On boot, should the camera restore defaults?
-struct camera* boot_camera(){
+void save_default_struct(camera *cam, ctrls_struct *controls){
+    for (int i = 0; i < CAM_CTRL_COUNT; i++){
+        
+        set_ctrl_struct(controls, i, cam->controls[i].default_val);
+    }
+}
 
-    struct camera *cam = malloc(sizeof(struct camera));
+int reset_ctrl(camera *cam, ctrl_tag ctrl){
 
-    int fd = open("/dev/video0", O_RDWR | O_NONBLOCK, 0);
+    int ret = set_ctrl(cam, ctrl, cam->controls[ctrl].default_val);
+
+    if (ret != 0){
+        return -1;
+    }
+
+    return 0;
+}
+
+void reset(camera *cam){
+
+    for (int i = 0; i < CAM_CTRL_COUNT; i++){
+
+        reset_ctrl(cam, i);
+
+    }
+
+}
+
+camera* boot_camera(char *cam_file){
+
+    camera *cam = malloc(sizeof(struct camera));
+    int fd = open(cam_file, O_RDWR | O_NONBLOCK, 0);
     cam->fd = fd;
-    
-    for (int i = 0; i < 14; i++){
-        get_ctrl(cam, i, &cam->values[i]);
+
+    for (int i = 0; i < CAM_CTRL_COUNT; i++){
+        struct v4l2_queryctrl query;
+        int ret = get_queryctrl(cam, i, &query);
+
+        if (ret != 0){
+            //We failed our queryctrl;
+            fprintf(stderr, "Error creating cam struct. Make sure the cam_file argument points to the correct file.");
+            return NULL;
+        }
+
+        strcpy(cam->controls[i].name, query.name);
+        cam->controls[i].v4l2_id = query.id;
+        cam->controls[i].max_value = query.maximum;
+        cam->controls[i].min_value = query.minimum;
+        cam->controls[i].default_val = query.default_value;
     }
 
     return (cam);
 
-
 }
 
-void camera_close(struct camera *cam){
+int get_queryctrl(camera *cam, ctrl_tag ctrl, struct v4l2_queryctrl *query_out){
+    struct v4l2_queryctrl query;
+    CLEAR(query);
+    query.id = get_ctrl_id(ctrl);
+    
+    int ret = ioctl(cam->fd, VIDIOC_QUERYCTRL, &query);
+
+    if (ret == -1) {
+        if (query.id == 1)
+            perror("IOCTL failed because of ctrl argument");
+        else
+            perror("IOCTL failed because of value argument");
+        return errno;
+    } else {
+
+        *query_out = query;
+        return 0;
+
+    }
+}
+
+void close_cam(camera *cam){
+
+    if (cam == NULL){
+        return;
+    }
 
     close(cam->fd);
     free(cam);
 
+
+}
+
+void print_ctrls(camera *cam){
+
+    for (int i = 0; i < CAM_CTRL_COUNT; i++){
+        int value;
+        get_ctrl(cam, i, &value);
+        printf("%s %d\n", cam->controls[i].name, value);
+
+    }
 
 }

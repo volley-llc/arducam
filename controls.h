@@ -25,14 +25,7 @@
 #include <jpeglib.h>
 
 #include <linux/usb/ch9.h>
-
-struct camera{
-    int fd;
-    int values[14];
-
-};
-
-enum controls{
+typedef enum controls{
     BRIGHTNESS,
     CONTRAST,
     SATURATION,
@@ -46,17 +39,75 @@ enum controls{
     BACKLIGHT_COMPENSATION,
     EXPOSURE_AUTO,
     EXPOSURE_ABSOLUTE,
-    EXPOSURE_AUTO_PRIORITY
-};
+    EXPOSURE_AUTO_PRIORITY,
 
+    CAM_CTRL_COUNT
 
-int set_ctrl(int ctrl, int value, struct camera *cam);
-int get_ctrl(struct camera *cam, int ctrl, int* value);
-int write_ctrls_to_file(struct camera *cam);
-int load_ctrls_from_file(struct camera *cam);
-int restore_defaults(struct camera *cam);
-struct camera* boot_camera();
-void camera_close(struct camera *cam);
+} ctrl_tag;
+
+typedef enum recording_formats{
+    MJPEG_1920_1080,
+    MJPEG_1280_1024,
+    MJPEG_1280_720,
+    MJPEG_800_600,
+    MJPEG_640_480,
+    MJPEG_320_240,
+
+    YUYV_1920_1080,
+    YUYV_1280_1024,
+    YUYV_1280_720,
+    YUYV_800_600,
+    YUYV_640_480,
+    YUYV_320_240,
+} format;
+
+typedef struct Control {
+    unsigned char name[32];
+    unsigned int v4l2_id;
+    int min_value;
+    int max_value;
+    int default_val;
+} Control;
+
+typedef struct camera{
+    int fd;
+    Control controls[CAM_CTRL_COUNT];
+
+} camera;
+
+typedef struct ctrls_struct{
+    int brightness;
+    int contrast;
+    int saturation;
+    int hue;
+    int auto_white_balance;
+    int gamma;
+    int gain;
+    int power_line_frequency;
+    int white_balance_temperature;
+    int sharpness;
+    int backlight_compensation;
+    int exposure_auto;
+    int exposure_absolute;
+    int exposure_auto_priority;
+
+}ctrls_struct;
+
+void save_default_struct(camera *cam, ctrls_struct *controls);
+void print_ctrls(camera *cam);
+void save_struct(camera *cam, ctrls_struct *controls);
+void load_struct(camera *cam, ctrls_struct *controls);
+int get_ctrl_struct(ctrls_struct *controls, ctrl_tag ctrl);
+void set_ctrl_struct(ctrls_struct *controls, ctrl_tag ctrl, int value);
+int set_ctrl(camera *cam, ctrl_tag ctrl, int value);
+int get_ctrl(camera *cam, ctrl_tag ctrl, int* value);
+int save_file(camera *cam, const char* fname);
+int load_file(camera *cam, const char* fname);
+void reset(camera *cam);
+camera* boot_camera(char *cam_file);
+int get_queryctrl(camera *cam, ctrl_tag ctrl, struct v4l2_queryctrl *query_out);
+void close_cam(camera *cam);
+int reset_ctrl(camera *cam, ctrl_tag ctrl);
 
 
 #endif
