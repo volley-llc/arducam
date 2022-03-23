@@ -2,24 +2,6 @@
 
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
 
-int get_fmt(camera *cam){
-    struct v4l2_format fmt = {0};
-    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    fmt.fmt.pix.width = 1920;
-    fmt.fmt.pix.height = 1080;
-    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
-    fmt.fmt.pix.field = V4L2_FIELD_NONE;
-
-    if (-1 == xioctl(cam->fd, VIDIOC_G_FMT, &fmt))
-    {
-        perror("Setting Pixel Format");
-        return 1;
-    }
-
-    printf("%s", fmt.fmt.pix.width);
-
-}
-
 int get_ctrl_id(ctrl_tag ctrl){
     int ctrl_id;
     switch(ctrl){
