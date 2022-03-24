@@ -41,6 +41,8 @@ typedef enum controls{
     EXPOSURE_ABSOLUTE,
     EXPOSURE_AUTO_PRIORITY,
 
+    FORMAT,
+
     CAM_CTRL_COUNT
 
 } ctrl_tag;
@@ -71,7 +73,8 @@ typedef struct Control {
 
 typedef struct camera{
     int fd;
-    Control controls[CAM_CTRL_COUNT];
+    Control controls[CAM_CTRL_COUNT-1];
+    uint8_t *buffer;
 
 } camera;
 
@@ -93,6 +96,9 @@ typedef struct ctrls_struct{
 
 }ctrls_struct;
 
+int capture(camera *cam, char *file_name);
+int set_fmt(camera *cam, format fmt_tag);
+int get_fmt(camera *cam);
 void save_default_struct(camera *cam, ctrls_struct *controls);
 void print_ctrls(camera *cam);
 void save_struct(camera *cam, ctrls_struct *controls);

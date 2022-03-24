@@ -20,7 +20,7 @@ int print_caps(int fd)
         if (-1 == xioctl(fd, VIDIOC_QUERYCAP, &caps))
         {
                 perror("Querying Capabilities");
-                return 1;
+                return errno;
         }
 
         printf( "Driver Caps:\n"
@@ -42,7 +42,7 @@ int print_caps(int fd)
         if (-1 == xioctl (fd, VIDIOC_CROPCAP, &cropcap))
         {
                 perror("Querying Cropping Capabilities");
-                return 1;
+                return errno;
         }
 
         printf( "Camera Cropping:\n"
@@ -74,20 +74,17 @@ int print_caps(int fd)
         if (!support_jpg)
         {
             printf("Doesn't support MJPEG.\n");
-            return 1;
+            return -1;
         }
 
         struct v4l2_format fmt = {0};
         fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        fmt.fmt.pix.width = 1920;
-        fmt.fmt.pix.height = 1080;
-        fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
         fmt.fmt.pix.field = V4L2_FIELD_NONE;
 
-        if (-1 == xioctl(fd, VIDIOC_S_FMT, &fmt))
+        if (-1 == xioctl(fd, VIDIOC_G_FMT, &fmt))
         {
-            perror("Setting Pixel Format");
-            return 1;
+            perror("Getting Pixel Format");
+            return errno;
         }
 
         strncpy(fourcc, (char *)&fmt.fmt.pix.pixelformat, 4);
@@ -113,7 +110,7 @@ int init_mmap(int fd)
     if (-1 == xioctl(fd, VIDIOC_REQBUFS, &req))
     {
         perror("Requesting Buffer");
-        return 1;
+        return errno;
     }
 
     struct v4l2_buffer buf = {0};
@@ -123,17 +120,17 @@ int init_mmap(int fd)
     if(-1 == xioctl(fd, VIDIOC_QUERYBUF, &buf))
     {
         perror("Querying Buffer");
-        return 1;
+        return errno;
     }
 
     buffer = mmap (NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, buf.m.offset);
-    printf("Length: %d\nAddress: %p\n", buf.length, buffer);
-    printf("Image Length: %d\n", buf.bytesused);
+    //printf("Length: %d\nAddress: %p\n", buf.length, buffer);
+    //printf("Image Length: %d\n", buf.bytesused);
 
     return 0;
 }
 
-int capture_image(int fd)
+int capture_image(int fd, char *file_name)
 {
     struct v4l2_buffer buf = {0};
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -142,13 +139,13 @@ int capture_image(int fd)
     if(-1 == xioctl(fd, VIDIOC_QBUF, &buf))
     {
         perror("Query Buffer");
-        return 1;
+        return errno;
     }
 
     if(-1 == xioctl(fd, VIDIOC_STREAMON, &buf.type))
     {
         perror("Start Capture");
-        return 1;
+        return errno;
     }
 
     fd_set fds;
@@ -160,40 +157,21 @@ int capture_image(int fd)
     if(-1 == r)
     {
         perror("Waiting for Frame");
-        return 1;
+        return errno;
     }
 
     if(-1 == xioctl(fd, VIDIOC_DQBUF, &buf))
     {
         perror("Retrieving Frame");
-        return 1;
+        return errno;
     }
 
-    time_t t;
-    time(&t);
-    char folder[1000] = "../images/";
-    strcat(folder, ctime(&t));
-    int outfd = open(folder, O_RDWR | O_CREAT, 0644);
+
+    int outfd = open(file_name, O_RDWR | O_CREAT, 0644);
     write(outfd, buffer, buf.bytesused);
     close(outfd);
 
     return 0;
 }
 
-int quick_cap_frame(int fd){
 
-    if (fd == -1)
-    {
-            perror("Opening video device");
-            return 1;
-    }
-
-    if(init_mmap(fd))
-        return 1;
-
-    if(capture_image(fd))
-        return 1;
-
-    return 0;
-
-}
