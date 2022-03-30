@@ -3,100 +3,108 @@ Repo for the arducam mini-cam that's integrated into the trainer head
 
 API:
 
-********CAPTURE.C******************
 ______________________________________________________________________
-int print_caps(int fd)
-@param fd: The camera's file descriptor (usually in /dev mount)
+int print_caps(camera \*cam)
+Prints capabilites of the camera, along with selected
+recording modes.
 
-Run this fucntion to print all of the camera's specifications.
-This includes controls, recording modes, and pixel ratio.
-
-Returns exit status, along with perror if exit status is not 0.
+@param cam the pointer to the camera struct.
+@return exit status. 0 on success, errno on failure.
 ______________________________________________________________________
-int init_mmap(int fd)
-@param fd: The camera's file descriptor (usually in /dev mount)
+int capture\_image(camera \*cam, char \*file\_name)
 
-Initializes the buffer that will be used to store image data.
-Must be run before capture_image.
+@brief Captures a single image and writes it to @param file_name
 
-Returns exit status, along with perror if exit status is not 0.
-______________________________________________________________________
-int capture_image(int fd)
-@param fd: The camera's file descriptor (usually in /dev mount)
+@param cam the pointer to the camera file
+@param file_name The file destination for the image.
+@return exit status. 0 on success, errno on failure.
 
-Writes image capture data to the buffer, then saves it to a new
-file. The file is saved to /images folder in the root program
-folder.
-
-Returns exit status, along with perror if exit status is not 0.
-______________________________________________________________________
-int quick_cap_frame(int fd);
-@param fd: The camera's file descriptor (usually in /dev mount)
-
-Calls init_mmap and capture_image in succession.
-
-Returns exit status; 1 if error on either of the above function calls
-and 0 on success.
 ______________________________________________________________________
 
-*********CONTROLS.C****************
+int set\_ctrl(camera \*cam, ctrl_tag ctrl, int value)
+/**
+ * @brief Sets the value of a control.
+ * 
+ * @param cam pointer to the cam struct
+ * @param ctrl the ctrl_tag ENUM
+ * @param value the value to which we will set @param ctrl
+ * @return exit status. 0 on success, -1 on invalid @param ctrl argument,
+ * errno on IOCTL failure. Setting WHITE_BALANCE_TEMPERATURE or EXPOSURE_ABSOLUTE
+ * while their respective auto-set functions are on will result in success. Setting
+ * a control to a value above/below its upper/lower bounds will result in success and
+ * set the control's register to its max/min.
+ */
 ______________________________________________________________________
-int set_ctrl(int ctrl, int value, struct camera *cam);
-@param int ctrl: The control to have its value modified (use the control's ENUM code)
-@param int value: The value to which the control will be set
-@param struct camera *cam: The structure which holds the current control values.
-
-This function changes the existing value in a control's register to a new one.
-The structure which maintains the values (ctrl_vals) will be automatically
-updated, and the camera's control value will change accordingly. Changes to
-the camera's registers can be observed on the camera's video output in real-time.
-
-Returns: exit status.
+int get\_ctrl(camera \*cam, ctrl_tag ctrl, int\* value)
+/**
+ * @brief Get's the value of a control.
+ * 
+ * @param cam a pointer to the cam struct
+ * @param ctrl the ctrl_tag ENUM
+ * @param value the int into which @param ctrl's value will be passed. If @param ctrl is FORMAT, this will be
+ * the number associated with the camera's current format ENUM.
+ * @return exit status. 0 on success, -1 if an invalid ctrl_tag is entered, -2 if IOCTL returns
+ * invalid info, errno on IOCTL failure.
+ */
 ______________________________________________________________________
-int get_ctrl(struct camera *cam, int ctrl, int* value);
-@param struct camera *cam: The structure which holds the current control values.
-@param int ctrl: The control to have its value read (use the control's ENUM code)
-@param int* value: The int pointer in which the control's value will be stored
-after exiting the function.
-
-This function reads in a value from the camera and stores it in int* value.
-
-Returns: exit status.
+int load\_file(camera \*cam, const char\* fname)
+/**
+ * @brief Loads values from file into camera.
+ * 
+ * @param cam pointer to the cam struct
+ * @param fname String of filename from which to load data.
+ * @return exit status. 0 on success, errno on IOCTL failure for setting register or file open failure,
+ * -2 for file formatting error, -3 for pixel format incorrect entry formatting, -4 for
+ * too many control entries, -5 for too few control entries, -6 for invalid pixel format
+ * aspect ratio.
+ */
 ______________________________________________________________________
-int write_ctrls_to_file(struct camera *cam)
-@param struct camera *cam: The structure which holds the current control values.
-
-Writes the control values stored in @param *cam to a file named
-ctrl_values.txt. This file is located in the build folder.
-
-returns: exit status.
+int save\_file(camera \*cam, const char\* fname)
+/**
+ * @brief Writes camera's current values to a file.
+ * 
+ * @param cam pointer to cam struct.
+ * @param fname String of filename to which the output will be written.
+ * @return exit status. 0 on success, errno on IOCTL/file write failure, -2 if
+ * bad information retrieved from camera.
+ */
 ______________________________________________________________________
-int load_ctrls_from_file(struct camera *cam)
-@param struct camera *cam: The structure which holds the current control values.
-
-Loads control values from ctrl_values.txt. Values are places into both the *cam 
-struct's "values" field and the camera's registers.
-
-returns: exit status.
+int save\_struct(camera \*cam, ctrls_struct \*controls)
+/**
+ * @brief Saves a struct of the camera's current control values
+ * 
+ * @param cam the pointer to the cam struct
+ * @param controls The struct to which the camera's current control values with be saved.
+ * @return exit status. 0 on success, -2 if IOCTL returns with invalid info,
+ * errno on IOCTL failure.
+ */
 ______________________________________________________________________
-int restore_defaults(struct camera *cam)
-@param struct camera *cam: The structure which holds the current control values.
-
-Restores all values in camera's registers to their defaults. Updates @param
-*cam to reflect these new, default values.
-
-returns: exit status.
+int load\_struct(camera \*cam, ctrls_struct \*controls)
+/**
+ * @brief Loads values from a ctrls_struct into the camera.
+ * 
+ * @param cam a pointer to a camera struct
+ * @param controls 
+ * @return exit status. 0 on success, errno on failure.
+ */
 ______________________________________________________________________
-struct camera* boot_camera();
+int boot\_camera(camera \*cam, char \*cam_file)
 
-This function initializes the structure that holds the camera's file
-descriptor, control values, pixel ratio, and pixel format. All of the 
-camera's control values in the struct will reflect the camera's current
-values.
-
-Returns struct cam: the structure which holds the camera's info.
+/**
+ * @brief Boots the camera. Initializes the following in the camera struct:
+ * cam->fd: the camera's file descriptor.
+ * cam->controls: The list of controls belonging to the minicam. The control struct includes name and default/min/max values.
+ * cam->buffer: The memory map which is used to store bits before they are written to an image file.
+ * 
+ * @param cam a pointer to a camera object. Must be malloc'd prior to funciton call.
+ * @param cam_file the string for the file name of the camera. Usually one of the video files in the /dev mount.
+ * @return exit status. 0 on success, -1 if pointer to cam is NULL, errno on failure.
+ */
 ______________________________________________________________________
-void camera_close(struct camera *cam)
-@param struct camera *cam: The structure which holds the current control values.
-
-Closes the camera's file descriptor and frees the *cam struct from the heap.
+int close_cam(camera *cam)
+/**
+ * @brief Deallocates the memory used for the camera and closes the camera's file descriptor.
+ * 
+ * @param cam the pointer to the camera structure.
+ * @return exit status. 0 on success, errno on failure
+ */

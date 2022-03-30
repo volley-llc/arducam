@@ -11,11 +11,19 @@ typedef struct recording_format{
 }recording_format;
 
 
+
+/**
+ * @brief Fills in a recording_format struct from an int value associated with the format ENUM. 
+ * 
+ * @param fmt_tag: the ENUM for the desired format struct.
+ * @return recording_format*: the recording format struct with char *name, int height, and
+ * int width all matching that of @param fmt_tag.
+ * Returns NULL if @param fmt_tag is invalid.
+ */
 recording_format* get_fields_from_tag(format fmt_tag){
 
     recording_format *fmt = malloc(sizeof(fmt));
     fmt->name = "MJPEG";
-
 
     if (fmt_tag == MJPEG_1920_1080 || fmt_tag == YUYV_1920_1080) {
         fmt->width = 1920;
@@ -37,22 +45,30 @@ recording_format* get_fields_from_tag(format fmt_tag){
         fmt->width = 320;
         fmt->height = 240;
     } else {
-        fprintf(stderr, "Invalid tag entered");
+        fprintf(stderr, "Invalid tag entered\n");
         return NULL;
     }
 
-    int sub = fmt_tag - 5;
-
-    if (sub > 0){
-        fmt->name = "YUYV";
+    int diff = fmt_tag - 5;
+    if (diff > 0){
+        fmt->name = "YUYV"; // We are in the second half of the enums, and so it is a YUYV format
     }
 
     return fmt;
 
 }
-
-format get_fmt_tag(int fmt_type, int height){
-    format ret = -1;
+/**
+ * @brief Helps to interface between V4L2 query of selected pixel
+ * format and the format ENUM values.
+ * 
+ * @param fmt_type The V4L2_PIX_FMT enum for either YUYV or MJPEG.
+ * @param height The height of the aspect ratio for above pixel format.
+ * @return The format ENUM associated with the V4L2 pixel format/aspect ratio
+ * (a 0-11 int). 
+ * Returns -1 if the aspect ratio or pixel format entered is invalid.
+ */
+int get_fmt_tag(int fmt_type, int height){
+    format ret;
     switch(height){
         case 1080:
             ret = MJPEG_1920_1080;
@@ -73,35 +89,60 @@ format get_fmt_tag(int fmt_type, int height){
             ret = MJPEG_320_240;
             break;
         default:
-            //Should be impossible for this to fail
-            fprintf(stderr, "Valid pixel format for MINICAM not received.");
+            //Invalid aspect ratio is entered.
+            fprintf(stderr, "Invalid aspect ratio detected for ARDUCAM.\n");
             return -2;
     }
 
     if (fmt_type == V4L2_PIX_FMT_YUYV){
         ret = ret + 6;
+    } else if (fmt_type == V4L2_PIX_FMT_MJPEG){
+        return ret;
     }
-
-    return ret;
+    //fmt_type is neither YUYV or MJPEG
+    fprintf(stderr, "Invalid pixel format detected for ARDUCAM.\n");
+    return -2;
 
 }
-
-int get_fmt(camera *cam){
+/**
+ * @brief Getting the format ENUM for the camera's current state.
+ * 
+ * @param cam pointer to a cam struct.
+ * @param value the value into which the format ENUM will be passed on the function's exit.
+ * @return exit status. 0 on success, errno on IOCTL failure, -2 if info retrieved from IOCTL
+ * does not match ARDUCAM's specs.
+ */
+int get_fmt(camera *cam, int *value){
     struct v4l2_format fmt = {0};
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     fmt.fmt.pix.field = V4L2_FIELD_NONE;
 
     if (-1 == ioctl(cam->fd, VIDIOC_G_FMT, &fmt))
     {
-        perror("Getting Pixel Format");
-        return -1;
+        perror("Getting Pixel Format"); //IOCTL failed
+        return errno;
     }
 
-    return get_fmt_tag(fmt.fmt.pix.pixelformat, fmt.fmt.pix.height); //-1 on ioctl error, -2 on getting tag
+    int ret = get_fmt_tag(fmt.fmt.pix.pixelformat, fmt.fmt.pix.height);
+
+    if (ret < 0){ 
+        return ret; //info received from IOCTL does not match ARDUCAM's specs.
+    }else{
+        *value = ret; //success
+        return 0;
+    }
 
 }
-
+/**
+ * @brief Set the fmt object
+ * 
+ * @param cam pointer to a cam struct
+ * @param fmt_tag ENUM for camera format to which the camera will be set
+ * @return exit status. 0 on success, errno on IOCTL failure, -1 if given
+ * an invalid fmt_tag argument.
+ */
 int set_fmt(camera *cam, format fmt_tag){
+    
     recording_format *fmt_struct = get_fields_from_tag(fmt_tag);
     if (fmt_struct == NULL){
         return -1; //Invalid tag entered!
@@ -128,7 +169,12 @@ int set_fmt(camera *cam, format fmt_tag){
     return 0;
 
 }
-
+/**
+ * @brief Gets the V4L2 ID associated with a ctrl_tag ENUM.
+ * 
+ * @param ctrl the ctrl_tag ENUM
+ * @return the V4L2 ID for ctrl. 
+ */
 int get_ctrl_id(ctrl_tag ctrl){
     int ctrl_id;
     switch(ctrl){
@@ -177,38 +223,38 @@ int get_ctrl_id(ctrl_tag ctrl){
         
 
         default:
-            //fprintf(stderr, "Invalid control entered. ");
-            return 1;
+            fprintf(stderr, "Invalid control entered\n"); //Failure
+            return -1;
 
     }
 
-    return ctrl_id;
+    return ctrl_id; //Success
 }
-
-int get_ctrl_struct(ctrls_struct *controls, ctrl_tag ctrl){
-    int *ptr = &(controls->brightness);
-    ptr = ptr + ctrl;
-    return *ptr;
-
-}
-
-void set_ctrl_struct(ctrls_struct *controls, ctrl_tag ctrl, int value){
-    int *ptr = &(controls->brightness);
-    ptr = ptr + ctrl;
-    *ptr = value;
-}
-
+/**
+ * @brief Get's the value of a control.
+ * 
+ * @param cam a pointer to the cam struct
+ * @param ctrl the ctrl_tag ENUM
+ * @param value the int into which @param ctrl's value will be passed. If @param ctrl is FORMAT, this will be
+ * the number associated with the camera's current format ENUM.
+ * @return exit status. 0 on success, -1 if an invalid ctrl_tag is entered, -2 if IOCTL returns
+ * invalid info, errno on IOCTL failure.
+ */
 int get_ctrl(camera *cam, ctrl_tag ctrl, int* value){
+    if (ctrl == FORMAT){
+        return get_fmt(cam, value);
+    }
     struct v4l2_control control;
     CLEAR(control);
     control.id = get_ctrl_id(ctrl);
+    if (control.id == -1){
+        //bad argument for @param ctrl
+        return -1;
+    }
     int ret = ioctl(cam->fd, VIDIOC_G_CTRL, &control);
 
     if (ret == -1) {
-        if (control.id == 1)
-            fprintf(stderr, "IOCTL failed for %s because of ctrl argument: %s", cam->controls[ctrl].name, strerror(errno));
-        else
-            fprintf(stderr, "IOCTL failed for %s because of value argument: %s", cam->controls[ctrl].name, strerror(errno));
+        fprintf(stderr, "IOCTL failed for %s: %s\n", cam->controls[ctrl].name, strerror(errno));
         return errno;
     } else {
 
@@ -218,11 +264,31 @@ int get_ctrl(camera *cam, ctrl_tag ctrl, int* value){
     }
 
 }
-
+/**
+ * @brief Sets the value of a control.
+ * 
+ * @param cam pointer to the cam struct
+ * @param ctrl the ctrl_tag ENUM
+ * @param value the value to which we will set @param ctrl
+ * @return exit status. 0 on success, -1 on invalid @param ctrl argument,
+ * errno on IOCTL failure. Setting WHITE_BALANCE_TEMPERATURE or EXPOSURE_ABSOLUTE
+ * while their respective auto-set functions are on will result in success. Setting
+ * a control to a value above/below its upper/lower bounds will result in success and
+ * set the control's register to its max/min.
+ */
 int set_ctrl(camera *cam, ctrl_tag ctrl, int value){
+
+    if (ctrl == FORMAT){
+        return set_fmt(cam, value);
+    }
+
     struct v4l2_control control;
     CLEAR(control);
     control.id = get_ctrl_id(ctrl);
+    if (control.id == -1){
+        //bad argument for @param ctrl
+        return -1;
+    }
     control.value = value;
 
     int ret = ioctl(cam->fd, VIDIOC_S_CTRL, &control); //set camera's control value to @param value
@@ -235,7 +301,6 @@ int set_ctrl(camera *cam, ctrl_tag ctrl, int value){
         if (value == 1)
             return 0; //skip
             //fprintf(stderr, "Cannot set WHITE_BALANCE_TEMPERATURE while AUTO_WHITE_BALANCE is on. Set WHITE_BALANCE to 0 to adjust WHITE_BALANCE_TEMPERATURE\n");
-            //I am not returning here because I want to keep errno. 
 
     }
 
@@ -245,16 +310,14 @@ int set_ctrl(camera *cam, ctrl_tag ctrl, int value){
         if (value == 3)
             return 0; //skip
             //fprintf(stderr, "Cannot set EXPOSURE_ABSOLUTE while EXPOSURE_AUTO is set to 3. Set EXPOSURE_AUTO to 1 to adjust exposure.\n");
-            //I am not returning here because I want to keep errno. 
 
     }
     ///////////////////// DONE CHECKING FOR EDGE CASES/////////////////////////////////////
 
+    
     if (ret == -1) {
-        if (control.id == 1)
-            fprintf(stderr, "IOCTL failed for %s because of ctrl argument: %s", cam->controls[ctrl].name, strerror(errno));
-        else
-            fprintf(stderr, "IOCTL failed for %s because of value argument: %s", cam->controls[ctrl].name, strerror(errno));
+        //bad argument for @param value
+        fprintf(stderr, "IOCTL failed for %s because of value argument: %s\n", cam->controls[ctrl].name, strerror(errno));
         return errno;
 
         
@@ -270,12 +333,19 @@ int set_ctrl(camera *cam, ctrl_tag ctrl, int value){
             , cam->controls[ctrl].name, cam->controls[ctrl].name, cam->controls[ctrl].max_value);
         }
 
-        return (0);
+        return 0;
 
     }
 
 }
-
+/**
+ * @brief Writes camera's current values to a file.
+ * 
+ * @param cam pointer to cam struct.
+ * @param fname String of filename to which the output will be written.
+ * @return exit status. 0 on success, errno on IOCTL/file write failure, -2 if
+ * bad information retrieved from camera.
+ */
 int save_file(camera *cam, const char* fname){
 
     FILE *out = fopen(fname, "w+");
@@ -285,16 +355,16 @@ int save_file(camera *cam, const char* fname){
     }
 
     //error checking loop -- makes sure camera can get all values
-    for (int i = 0; i< CAM_CTRL_COUNT - 1; i++){ // need to do -1 now that we have 
+    for (int i = 0; i< CAM_CTRL_COUNT; i++){
         int value;
         int ret = get_ctrl(cam, i, &value);
         if (ret != 0){
-            return -1; //we could not successfully get a value from a camera, should only happen when unplugged
+            return ret; //get_ctrl had IOCTL failure or retrieved bad information
         }
     }
     
-    //writing loop
-    for (int i =0; i < CAM_CTRL_COUNT - 1; i++){
+    //writing loop. Don't need to error check our get_ctrl calls as we've preprocessed these.
+    for (int i =0; i < CAM_CTRL_COUNT - 1; i++){ //do this for all except FORMAT
         char val_char[10];
         int value;
         get_ctrl(cam, i, &value);
@@ -303,11 +373,12 @@ int save_file(camera *cam, const char* fname){
         fputs(val_char, out);
     }
 
-    //controls are written, now write format
-    format fmt_tag = get_fmt(cam);
+    //controls are written, now write FORMAT
+    int value;
+    get_fmt(cam, &value);
+    format fmt_tag = value;
     recording_format* fmt_struct = get_fields_from_tag(fmt_tag);
     char val_char[20];
-    int value;
     sprintf(val_char, ":%s_%d_%d\n", fmt_struct->name, fmt_struct->width, fmt_struct->height);
     fputs("Format", out);
     fputs(val_char, out);
@@ -320,7 +391,16 @@ int save_file(camera *cam, const char* fname){
     return 0;
 
 }
-//error checking here is a nightmare
+/**
+ * @brief Loads values from file into camera.
+ * 
+ * @param cam pointer to the cam struct
+ * @param fname String of filename from which to load data.
+ * @return exit status. 0 on success, errno on IOCTL failure for setting register or file open failure,
+ * -2 for file formatting error, -3 for pixel format incorrect entry formatting, -4 for
+ * too many control entries, -5 for too few control entries, -6 for invalid pixel format
+ * aspect ratio.
+ */
 int load_file(camera *cam, const char* fname){
 
     FILE *in = fopen(fname, "r");
@@ -332,34 +412,56 @@ int load_file(camera *cam, const char* fname){
     //we check to make sure the file is formatted correctly
     char line[50];
     int i = 0;
+    int correct_pix_fmt = 0;
     while (fgets(line, sizeof(line), in) !=NULL){
-            char *ctrl_name = strtok(line, ":");
-            char *ctrl_val_str = strtok(NULL, "\n");
-            if (ctrl_val_str == NULL){
-                fprintf(stderr, "File format error: format should be \"CONTROL_NAME:CONTROL_VALUE\"");
+        char *ctrl_name = strtok(line, ":");
+        if (strcmp(ctrl_name, cam->controls[i].name)){
+            fprintf(stderr, "Control order error. Expected %s, got %s\n", cam->controls[i].name, ctrl_name);
+            return -1;
+        }
+        char *ctrl_val_str = strtok(NULL, "\n");
+        if (ctrl_val_str == NULL){
+            fprintf(stderr, "File format error: format should be \"CONTROL_NAME:CONTROL_VALUE\"\n");
+            return -2;
+        }
+
+        if (i == FORMAT){
+            char *format = strtok(ctrl_val_str, "_");
+            char *width_str = strtok(NULL, "_");
+            char *height_str = strtok(NULL, "_");
+            if (format == NULL || width_str == NULL || height_str == NULL){
+                fprintf(stderr, "File format error: pixel format should be written as \"Format:PIXELFORMAT_WIDTH_HEIGHT\"\n");
                 return -3;
             }
-            i = i + 1;
-            if (i > CAM_CTRL_COUNT){
-                fprintf(stderr, "File format error: too many controls");
-                return -4;
-            }
         }
+
+        i = i + 1;
+            
+        }
+    if (i > CAM_CTRL_COUNT){
+        fprintf(stderr, "File format error: too many controls\n");
+        return -4;
+    }
     if (i < CAM_CTRL_COUNT){
-            fprintf(stderr, "File format error: too few controls");
+            fprintf(stderr, "File format error: too few controls\n");
             return -5;
         }
 
     //Done checking for formatting errors
     fclose(in);
     in = fopen(fname, "r");
+    if (in == NULL){
+        perror("Unable to find fname");
+        return errno;
+    }
     i = 0;
     while (fgets(line, sizeof(line), in) !=NULL){
+        int ctrl_val;
         char *ctrl_name = strtok(line, ":");
         char *ctrl_val_str = strtok(NULL, "\n");
         if (i != FORMAT){
-            int ctrl_val = atoi(ctrl_val_str);
-            set_ctrl(cam, i, ctrl_val); //error handle this
+            ctrl_val = atoi(ctrl_val_str);
+            
         }else{
             int tag;
             char *format = strtok(ctrl_val_str, "_");
@@ -368,15 +470,22 @@ int load_file(camera *cam, const char* fname){
 
             int height = atoi(height_str);
             if (strcmp("YUYV", format)){
-                tag = get_fmt_tag(V4L2_PIX_FMT_MJPEG, height); //error handle this
+                ctrl_val = get_fmt_tag(V4L2_PIX_FMT_MJPEG, height);
             }else{
-                tag = get_fmt_tag(V4L2_PIX_FMT_YUYV, height); //error handle this
+                ctrl_val = get_fmt_tag(V4L2_PIX_FMT_YUYV, height);
+            }
+
+            if (ctrl_val < 0){
+                return -6;
             }
             
-            set_fmt(cam, tag);
-
             
+
         }
+        int ret = set_ctrl(cam, i, ctrl_val);
+        if (ret != 0){
+                return ret;
+            }
         
         i = i + 1;
     }
@@ -385,59 +494,104 @@ int load_file(camera *cam, const char* fname){
 
 }
 
-//cannot fail
-//saves camera control values to struct
-void save_struct(camera *cam, ctrls_struct *controls){
+/**
+ * @brief Saves a struct of the camera's current control values
+ * 
+ * @param cam the pointer to the cam struct
+ * @param controls The struct to which the camera's current control values with be saved.
+ * @return exit status. 0 on success, -2 if IOCTL returns with invalid info,
+ * errno on IOCTL failure.
+ */
+int save_struct(camera *cam, ctrls_struct *controls){
     for (int i = 0; i < CAM_CTRL_COUNT; i++){
         int value;
-        get_ctrl(cam, i, &value);
+        int ret = get_ctrl(cam, i, &value);
+        if (ret != 0){
+            return ret;
+        }
         
-        set_ctrl_struct(controls, i, value);
+        controls->value[i] = value;
     }
+    return 0;
 }
 
-//loads struct values into camera control registers
-//can technically fail, but cannot trigger return because of white_balance_temperature and exposure_absolute
-void load_struct(camera *cam, ctrls_struct *controls){
+/**
+ * @brief Loads values from a ctrls_struct into the camera.
+ * 
+ * @param cam a pointer to a camera struct
+ * @param controls 
+ * @return exit status. 0 on success, errno on failure.
+ */
+int load_struct(camera *cam, ctrls_struct *controls){
     for (int i = 0; i < CAM_CTRL_COUNT; i++){
-        int value = get_ctrl_struct(controls, i);
-        set_ctrl(cam, i, value);
+        int value = controls->value[i];
+        int ret = set_ctrl(cam, i, value);
+        if (ret != 0 ){
+            return ret; //impossible for non-errno error codes to be thrown
+        }
     }
 
-}
+    return 0;
 
-void save_default_struct(camera *cam, ctrls_struct *controls){
-    for (int i = 0; i < CAM_CTRL_COUNT; i++){
-        
-        set_ctrl_struct(controls, i, cam->controls[i].default_val);
-    }
 }
-
+/**
+ * @brief Resets a control to its default value
+ * 
+ * @param cam a pointer to a cam struct
+ * @param ctrl the control value which will be reset
+ * @return exit status. 0 on success, -1 on invalid @param ctrl argument,
+ * errno on IOCTL failure. 
+ */
 int reset_ctrl(camera *cam, ctrl_tag ctrl){
 
     int ret = set_ctrl(cam, ctrl, cam->controls[ctrl].default_val);
 
-    if (ret != 0){
-        return -1;
-    }
-
-    return 0;
+    return ret;
 }
 
-void reset(camera *cam){
+/**
+ * @brief Resets the camera to its default values
+ * 
+ * @param cam a pointer to a cam struct
+ * @return exit status. 0 on success, errno on IOCTL failure.
+ */
+int reset(camera *cam){
 
     for (int i = 0; i < CAM_CTRL_COUNT; i++){
 
-        reset_ctrl(cam, i);
+        int ret = reset_ctrl(cam, i);
+        if (ret != 0){
+            return ret;
+        }
 
     }
 
-}
-//change to int
-camera* boot_camera(char *cam_file){
+    return 0;
 
-    camera *cam = malloc(sizeof(struct camera));
+}
+
+/**
+ * @brief Boots the camera. Initializes the following in the camera struct:
+ * cam->fd: the camera's file descriptor.
+ * cam->controls: The list of controls belonging to the minicam. The control struct includes name and default/min/max values.
+ * cam->buffer: The memory map which is used to store bits before they are written to an image file.
+ * 
+ * @param cam a pointer to a camera object. Must be malloc'd prior to funciton call.
+ * @param cam_file the string for the file name of the camera. Usually one of the video files in the /dev mount.
+ * @return exit status. 0 on success, -1 if pointer to cam is NULL, errno on failure.
+ */
+int boot_camera(camera *cam, char *cam_file){
+
+    if (cam == NULL){
+        fprintf(stderr, "Could not open cam, argument was NULL\n");
+        return -1;
+    }
+
     int fd = open(cam_file, O_RDWR | O_NONBLOCK, 0);
+    if (fd == -1){
+        perror("Opening camera file");
+        return errno;
+    }
     cam->fd = fd;
 
     for (int i = 0; i < CAM_CTRL_COUNT - 1; i++){
@@ -445,9 +599,7 @@ camera* boot_camera(char *cam_file){
         int ret = get_queryctrl(cam, i, &query);
 
         if (ret != 0){
-            //We failed our queryctrl;
-            fprintf(stderr, "Error creating cam struct. Make sure the cam_file argument points to the correct file.");
-            return NULL;
+            return ret; //should never happen, since this is not a user-facing function.
         }
 
         strcpy(cam->controls[i].name, query.name);
@@ -456,24 +608,35 @@ camera* boot_camera(char *cam_file){
         cam->controls[i].min_value = query.minimum;
         cam->controls[i].default_val = query.default_value;
     }
+    strcpy(cam->controls[FORMAT].name, "Format");
+    cam->controls[FORMAT].default_val = MJPEG_1920_1080;
 
+    int ret = init_mmap(cam);
+    if (ret != 0){
+        return ret;
+    }
 
-    return (cam);
+    return 0;
 
 }
 
+/**
+ * @brief Get the queryctrl object
+ * 
+ * @param cam a pointer to the camera struct
+ * @param ctrl The control to be queried.
+ * @param query_out The struct to which the queryctrl will be written.
+ * @return exit status. 0 on success, errno on IOCTL failure.
+ */
 int get_queryctrl(camera *cam, ctrl_tag ctrl, struct v4l2_queryctrl *query_out){
     struct v4l2_queryctrl query;
     CLEAR(query);
-    query.id = get_ctrl_id(ctrl);
+    query.id = get_ctrl_id(ctrl); //this cannot fail, since this function is not user-facing
     
     int ret = ioctl(cam->fd, VIDIOC_QUERYCTRL, &query);
 
     if (ret == -1) {
-        if (query.id == 1)
-            fprintf(stderr, "IOCTL failed for %s because of ctrl argument: %s", cam->controls[ctrl].name, strerror(errno));
-        else
-            fprintf(stderr, "IOCTL failed for %s because of value argument: %s", cam->controls[ctrl].name, strerror(errno));
+        fprintf(stderr, "IOCTL failed for %s during camera_boot: %s\n", cam->controls[ctrl].name, strerror(errno));
         return errno;
         } else {
 
@@ -482,38 +645,257 @@ int get_queryctrl(camera *cam, ctrl_tag ctrl, struct v4l2_queryctrl *query_out){
 
     }
 }
-
-void close_cam(camera *cam){
+/**
+ * @brief Deallocates the memory used for the camera and closes the camera's file descriptor.
+ * 
+ * @param cam the pointer to the camera structure.
+ * @return exit status. 0 on success, errno on failure
+ */
+int close_cam(camera *cam){
 
     if (cam == NULL){
-        return;
+        fprintf(stderr, "Could not close cam, @param cam was NULL\n");
+        return -1;
     }
 
-    close(cam->fd);
+    int ret = close(cam->fd);
+    if (ret == -1){
+        perror("Could not close camera");
+        return errno;
+    }
     free(cam);
-
-
-}
-
-void print_ctrls(camera *cam){
-
-    for (int i = 0; i < CAM_CTRL_COUNT - 1; i++){
-        int value;
-        get_ctrl(cam, i, &value);
-        printf("%s %d\n", cam->controls[i].name, value);
-
-    }
-    
-}
-
-int capture(camera *cam, char *file_name){
-
-    if(init_mmap(cam->fd) != 0)
-        return errno;
-
-    if(capture_image(cam->fd, file_name) != 0)
-        return errno;
-
     return 0;
 
+
 }
+
+/**
+ * @brief Prints the cameras controls and their current values
+ * 
+ * @param cam 
+ * @return int 
+ */
+int print_ctrls(camera *cam){
+
+    for (int i = 0; i < CAM_CTRL_COUNT -1; i++){
+        int value;
+        int ret = get_ctrl(cam, i, &value);
+        if (ret != 0){
+            return ret;
+        }
+        printf("%s:%d\n", cam->controls[i].name, value);
+
+    }
+    recording_format *f = malloc(sizeof(recording_format));
+    int value;
+    int ret = get_ctrl(cam, FORMAT, &value);
+    if (ret != 0){
+            return ret;
+        }
+    f = get_fields_from_tag(value); //cannot fail
+    printf("Format:%s_%d_%d\n", f->name, f->width, f->height);
+    free(f);
+    return 0;
+}
+
+
+static int xioctl(int fd, int request, void *arg)
+{
+        int r;
+
+        do r = ioctl (fd, request, arg);
+        while (-1 == r && EINTR == errno);
+
+        return r;
+}
+
+
+/**
+ * @brief Prints capabilites of the camera, along with selected
+ * recording modes.
+ * 
+ * @param cam the pointer to the camera struct.
+ * @return exit status. 0 on success, errno on failure.
+ */
+int print_caps(camera *cam)
+{
+        struct v4l2_capability caps = {};
+        if (-1 == xioctl(cam->fd, VIDIOC_QUERYCAP, &caps))
+        {
+                perror("Querying Capabilities");
+                return errno;
+        }
+
+        printf( "Driver Caps:\n"
+                "  Driver: \"%s\"\n"
+                "  Card: \"%s\"\n"
+                "  Bus: \"%s\"\n"
+                "  Version: %d.%d\n"
+                "  Capabilities: %08x\n",
+                caps.driver,
+                caps.card,
+                caps.bus_info,
+                (caps.version>>16)&&0xff,
+                (caps.version>>24)&&0xff,
+                caps.capabilities);
+
+
+        struct v4l2_cropcap cropcap = {0};
+        cropcap.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        if (-1 == xioctl (cam->fd, VIDIOC_CROPCAP, &cropcap))
+        {
+                perror("Querying Cropping Capabilities");
+                return errno;
+        }
+
+        printf( "Camera Cropping:\n"
+                "  Bounds: %dx%d+%d+%d\n"
+                "  Default: %dx%d+%d+%d\n"
+                "  Aspect: %d/%d\n",
+                cropcap.bounds.width, cropcap.bounds.height, cropcap.bounds.left, cropcap.bounds.top,
+                cropcap.defrect.width, cropcap.defrect.height, cropcap.defrect.left, cropcap.defrect.top,
+                cropcap.pixelaspect.numerator, cropcap.pixelaspect.denominator);
+
+        int support_jpg = 0;
+
+        struct v4l2_fmtdesc fmtdesc = {0};
+        fmtdesc.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        char fourcc[5] = {0};
+        char c, e;
+        printf("  FMT : CE Desc\n--------------------\n");
+        while (0 == xioctl(cam->fd, VIDIOC_ENUM_FMT, &fmtdesc))
+        {
+                strncpy(fourcc, (char *)&fmtdesc.pixelformat, 4);
+                if (fmtdesc.pixelformat == V4L2_PIX_FMT_MJPEG)
+                    support_jpg = 1;
+                c = fmtdesc.flags & 1? 'C' : ' ';
+                e = fmtdesc.flags & 2? 'E' : ' ';
+                printf("  %s: %c%c %s\n", fourcc, c, e, fmtdesc.description);
+                fmtdesc.index++;
+        }
+
+        if (!support_jpg)
+        {
+            printf("Doesn't support MJPEG.\n");
+            return -1;
+        }
+
+        struct v4l2_format fmt = {0};
+        fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        fmt.fmt.pix.field = V4L2_FIELD_NONE;
+
+        if (-1 == xioctl(cam->fd, VIDIOC_G_FMT, &fmt))
+        {
+            perror("Getting Pixel Format");
+            return errno;
+        }
+
+        strncpy(fourcc, (char *)&fmt.fmt.pix.pixelformat, 4);
+        printf( "Selected Camera Mode:\n"
+                "  Width: %d\n"
+                "  Height: %d\n"
+                "  PixFmt: %s\n"
+                "  Field: %d\n",
+                fmt.fmt.pix.width,
+                fmt.fmt.pix.height,
+                fourcc,
+                fmt.fmt.pix.field);
+        return 0;
+}
+
+/**
+ * @brief Initializes the memory map that stores bytes captured by the camera.
+ * 
+ * @param cam the pointer to the camera object.
+ * @return exit status. 0 on success, errno on failure.
+ */
+int init_mmap(camera *cam)
+{
+    struct v4l2_requestbuffers req = {0};
+    req.count = 1;
+    req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    req.memory = V4L2_MEMORY_MMAP;
+
+    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &req))
+    {
+        perror("Requesting Buffer");
+        return errno;
+    }
+
+    struct v4l2_buffer buf = {0};
+    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    buf.memory = V4L2_MEMORY_MMAP;
+    buf.index = 0;
+    if(-1 == xioctl(cam->fd, VIDIOC_QUERYBUF, &buf))
+    {
+        perror("Querying Buffer");
+        return errno;
+    }
+
+    cam->buffer = mmap (NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, cam->fd, buf.m.offset);
+    //printf("Length: %d\nAddress: %p\n", buf.length, buffer);
+    //printf("Image Length: %d\n", buf.bytesused);
+
+    return 0;
+}
+
+/**
+ * @brief Captures a single image and writes it to @param file_name
+ * 
+ * @param cam the pointer to the camera file
+ * @param file_name The file destination for the image.
+ * @return exit status. 0 on success, errno on failure.
+ */
+int capture_image(camera *cam, char *file_name)
+{
+    struct v4l2_buffer buf = {0};
+    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    buf.memory = V4L2_MEMORY_MMAP;
+    buf.index = 0;
+    if(-1 == xioctl(cam->fd, VIDIOC_QBUF, &buf))
+    {
+        perror("Query Buffer");
+        return errno;
+    }
+
+    if(-1 == xioctl(cam->fd, VIDIOC_STREAMON, &buf.type))
+    {
+        perror("Start Capture");
+        return errno;
+    }
+
+    fd_set fds;
+    FD_ZERO(&fds);
+    FD_SET(cam->fd, &fds);
+    struct timeval tv = {0};
+    tv.tv_sec = 2;
+    int r = select(cam->fd+1, &fds, NULL, NULL, &tv);
+    if(-1 == r)
+    {
+        perror("Waiting for Frame");
+        return errno;
+    }
+
+    if(-1 == xioctl(cam->fd, VIDIOC_DQBUF, &buf))
+    {
+        perror("Retrieving Frame");
+        return errno;
+    }
+
+    int outfd = open(file_name, O_RDWR | O_CREAT, 0644);
+    if (outfd == -1){
+        printf("Problem opening file %s: %s\n", file_name, strerror(errno));
+        return errno;
+    }
+    int ret = write(outfd, cam->buffer, buf.bytesused);
+    if (ret == -1){
+        printf("Problem writing to file %s: %s\n", file_name, strerror(errno));
+        return errno;
+    }
+
+    close(outfd);
+
+    return 0;
+}
+
+

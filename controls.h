@@ -26,7 +26,7 @@
 
 #include <linux/usb/ch9.h>
 typedef enum controls{
-    BRIGHTNESS,
+    BRIGHTNESS = 0,
     CONTRAST,
     SATURATION,
     HUE,
@@ -48,7 +48,7 @@ typedef enum controls{
 } ctrl_tag;
 
 typedef enum recording_formats{
-    MJPEG_1920_1080,
+    MJPEG_1920_1080 = 0,
     MJPEG_1280_1024,
     MJPEG_1280_720,
     MJPEG_800_600,
@@ -79,40 +79,26 @@ typedef struct camera{
 } camera;
 
 typedef struct ctrls_struct{
-    int brightness;
-    int contrast;
-    int saturation;
-    int hue;
-    int auto_white_balance;
-    int gamma;
-    int gain;
-    int power_line_frequency;
-    int white_balance_temperature;
-    int sharpness;
-    int backlight_compensation;
-    int exposure_auto;
-    int exposure_absolute;
-    int exposure_auto_priority;
+    int value[CAM_CTRL_COUNT];
 
 }ctrls_struct;
 
-int capture(camera *cam, char *file_name);
+int print_caps(camera *cam);
+int init_mmap(camera *cam);
+int capture_image(camera *cam, char* file_name);
 int set_fmt(camera *cam, format fmt_tag);
-int get_fmt(camera *cam);
-void save_default_struct(camera *cam, ctrls_struct *controls);
-void print_ctrls(camera *cam);
-void save_struct(camera *cam, ctrls_struct *controls);
-void load_struct(camera *cam, ctrls_struct *controls);
-int get_ctrl_struct(ctrls_struct *controls, ctrl_tag ctrl);
-void set_ctrl_struct(ctrls_struct *controls, ctrl_tag ctrl, int value);
+int get_fmt(camera *cam, int *value);
+int print_ctrls(camera *cam);
+int save_struct(camera *cam, ctrls_struct *controls);
+int load_struct(camera *cam, ctrls_struct *controls);
 int set_ctrl(camera *cam, ctrl_tag ctrl, int value);
 int get_ctrl(camera *cam, ctrl_tag ctrl, int* value);
 int save_file(camera *cam, const char* fname);
 int load_file(camera *cam, const char* fname);
-void reset(camera *cam);
-camera* boot_camera(char *cam_file);
+int reset(camera *cam);
+int boot_camera(camera *cam, char *cam_file);
 int get_queryctrl(camera *cam, ctrl_tag ctrl, struct v4l2_queryctrl *query_out);
-void close_cam(camera *cam);
+int close_cam(camera *cam);
 int reset_ctrl(camera *cam, ctrl_tag ctrl);
 
 
