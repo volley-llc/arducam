@@ -8,6 +8,7 @@
 #include <string.h>
 #include <errno.h>
 #include <sys/ioctl.h>
+#include <assert.h>
 
 #include <sys/mman.h>
 #include <sys/select.h>
@@ -94,8 +95,11 @@ int capture_image(camera *cam, char *file_name);
 int set_fmt(camera *cam, format fmt_tag);
 int get_fmt(camera *cam, int *value);
 int print_ctrls(camera *cam);
+void print_defaults(camera *cam);
+void print_bounds(camera *cam);
 int save_struct(camera *cam, ctrls_struct *controls);
 int load_struct(camera *cam, ctrls_struct *controls);
+void save_default_struct(camera *cam, ctrls_struct *controls);
 int set_ctrl(camera *cam, ctrl_tag ctrl, int value);
 int get_ctrl(camera *cam, ctrl_tag ctrl, int *value);
 int save_file(camera *cam, const char *fname);
