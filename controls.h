@@ -1,6 +1,5 @@
-#pragma once
-#ifndef CONTROLS
-#define CONTROLS
+#ifndef CONTROLS_CAM_LIB
+#define CONTROLS_CAM_LIB
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -26,88 +25,122 @@
 #include <jpeglib.h>
 
 #include <linux/usb/ch9.h>
-typedef enum controls
+/**
+ * @brief List of camera controls, including format.
+ * Used in arguments of get/set functions.
+ * 
+ */
+typedef const enum
 {
-    BRIGHTNESS = 0,
-    CONTRAST,
-    SATURATION,
-    HUE,
-    AUTO_WHITE_BALANCE,
-    GAMMA,
-    GAIN,
-    POWER_LINE_FREQUENCY,
-    WHITE_BALANCE_TEMPERATURE,
-    SHARPNESS,
-    BACKLIGHT_COMPENSATION,
-    EXPOSURE_AUTO,
-    EXPOSURE_ABSOLUTE,
-    EXPOSURE_AUTO_PRIORITY,
+    ACAM_BRIGHTNESS = 0,
+    ACAM_CONTRAST,
+    ACAM_SATURATION,
+    ACAM_HUE,
+    ACAM_AUTO_WHITE_BALANCE,
+    ACAM_GAMMA,
+    ACAM_GAIN,
+    ACAM_POWER_LINE_FREQUENCY,
+    ACAM_WHITE_BALANCE_TEMPERATURE,
+    ACAM_SHARPNESS,
+    ACAM_BACKLIGHT_COMPENSATION,
+    ACAM_EXPOSURE_AUTO,
+    ACAM_EXPOSURE_ABSOLUTE,
+    ACAM_EXPOSURE_AUTO_PRIORITY,
 
-    FORMAT,
+    ACAM_FORMAT,
 
-    CAM_CTRL_COUNT
+    __ACAM_CTRL_COUNT
 
-} ctrl_tag;
-
-typedef enum recording_formats
+} ctrl_tag_t;
+/**
+ * @brief List of supported pixel formats for the
+ * ARDUCAM. Used as arguments when setting camera format;
+ * corresponding int returned when getting camera format.
+ * 
+ */
+typedef enum
 {
-    MJPEG_1920_1080 = 0,
-    MJPEG_1280_1024,
-    MJPEG_1280_720,
-    MJPEG_800_600,
-    MJPEG_640_480,
-    MJPEG_320_240,
+    ACAM_MJPEG_1920_1080 = 0,
+    ACAM_MJPEG_1280_1024,
+    ACAM_MJPEG_1280_720,
+    ACAM_MJPEG_800_600,
+    ACAM_MJPEG_640_480,
+    ACAM_MJPEG_320_240,
 
-    YUYV_1920_1080,
-    YUYV_1280_1024,
-    YUYV_1280_720,
-    YUYV_800_600,
-    YUYV_640_480,
-    YUYV_320_240,
-} format;
+    ACAM_YUYV_1920_1080,
+    ACAM_YUYV_1280_1024,
+    ACAM_YUYV_1280_720,
+    ACAM_YUYV_800_600,
+    ACAM_YUYV_640_480,
+    ACAM_YUYV_320_240,
 
-typedef struct Control
+    __ACAM_FMT_COUNT
+
+} fmt_t;
+
+/**
+ * @brief Structure that maintains static information
+ * about each of the camera's control registers.
+ * 
+ */
+typedef struct
 {
-    unsigned char name[32];
+    char name[32];
     unsigned int v4l2_id;
     int min_value;
     int max_value;
     int default_val;
-} Control;
+} ctrl_t;
 
+/**
+ * @brief The structure which maintains static info
+ * about the ARDUCAM.
+ * 
+ */
 typedef struct camera
 {
     int fd;
-    Control controls[CAM_CTRL_COUNT - 1];
+    ctrl_t ctrls[__ACAM_CTRL_COUNT];
     uint8_t *buffer;
 
-} camera;
+} camera_t;
 
+/**
+ * @brief A struct to help the user get and set
+ * batches of camera controls.
+ * 
+ */
 typedef struct ctrls_struct
 {
-    int value[CAM_CTRL_COUNT];
+    int value[__ACAM_CTRL_COUNT];
 
 } ctrls_struct;
 
-int print_caps(camera *cam);
-int init_mmap(camera *cam);
-int capture_image(camera *cam, char *file_name);
-int set_fmt(camera *cam, format fmt_tag);
-int get_fmt(camera *cam, int *value);
-int print_ctrls(camera *cam);
-void print_defaults(camera *cam);
-void print_bounds(camera *cam);
-int save_struct(camera *cam, ctrls_struct *controls);
-int load_struct(camera *cam, ctrls_struct *controls);
-void save_default_struct(camera *cam, ctrls_struct *controls);
-int set_ctrl(camera *cam, ctrl_tag ctrl, int value);
-int get_ctrl(camera *cam, ctrl_tag ctrl, int *value);
-int save_file(camera *cam, const char *fname);
-int load_file(camera *cam, const char *fname);
-int reset(camera *cam);
-int boot_camera(camera *cam, char *cam_file);
-int get_queryctrl(camera *cam, ctrl_tag ctrl, struct v4l2_queryctrl *query_out);
-int close_cam(camera *cam);
-int reset_ctrl(camera *cam, ctrl_tag ctrl);
+
+//For details on functions, refer to the comments at the top of
+//each function definition in controls.c
+
+camera_t *open_cam(const char *cam_file, int *error); //start the camera
+int close_cam(camera_t *cam); //close the camera
+int capture_image(camera_t *cam, const char *file_name); //captures a single image
+
+int get_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int *value); //get the current value of a control
+int set_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int value); //set the value of a control
+
+int save_file(const camera_t *cam, const char *fname); //save current control values and format to external file
+int load_file(const camera_t *cam, const char *fname); //load control values and format from external file into camera
+
+int save_struct(const camera_t *cam, ctrls_struct *controls); //save a ctrls_struct with current camera control values and format
+void save_default_struct(const camera_t *cam, ctrls_struct *controls); //save a ctrls_struct with default camera values and format
+int load_struct(const camera_t *cam, const ctrls_struct *controls); //load control values and format from ctrls_struct into camera
+
+int reset_ctrl(const camera_t *cam, ctrl_tag_t ctrl); //resets the value of a single control to its default
+int reset_cam(const camera_t *cam); //resets all controls in camera to their defaults
+
+int print_ctrl(const camera_t *cam, ctrl_tag_t ctrl); //print the value of a single control
+int print_ctrl_all(const camera_t *cam); //print values of all controls
+void print_defaults(const camera_t *cam); //print default values of all controls
+void print_bounds(const camera_t *cam); //print upper and lower bounds of all controls
+int print_caps(const camera_t *cam); //print camera capabilities
 
 #endif
