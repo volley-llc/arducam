@@ -1,18 +1,16 @@
 
 #include "controls.h"
-#include "capture.h"
+
 
 int main()
 {
 
     int error;
 
-    camera_t *x = open_cam("/dev/video0", &error);
-
-    set_ctrl(x, ACAM_BRIGHTNESS, 0);
+    acam_camera_t *x = acam_open_cam("/dev/video0", &error);
 
 
-    close_cam(x);
+    acam_close_cam(x);
 
 
 

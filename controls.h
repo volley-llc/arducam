@@ -22,7 +22,6 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <linux/types.h>
-#include <jpeglib.h>
 
 #include <linux/usb/ch9.h>
 /**
@@ -51,7 +50,7 @@ typedef const enum
 
     __ACAM_CTRL_COUNT
 
-} ctrl_tag_t;
+} acam_ctrl_tag_t;
 /**
  * @brief List of supported pixel formats for the
  * ARDUCAM. Used as arguments when setting camera format;
@@ -74,9 +73,11 @@ typedef enum
     ACAM_YUYV_640_480,
     ACAM_YUYV_320_240,
 
-    __ACAM_FMT_COUNT
+    __ACAM_FMT_COUNT,
 
-} fmt_t;
+    __ACAM_FMT_INVALID
+
+} acam_fmt_t;
 
 /**
  * @brief Structure that maintains static information
@@ -90,7 +91,7 @@ typedef struct
     int min_value;
     int max_value;
     int default_val;
-} ctrl_t;
+} acam_ctrl_t;
 
 /**
  * @brief The structure which maintains static info
@@ -100,47 +101,47 @@ typedef struct
 typedef struct camera
 {
     int fd;
-    ctrl_t ctrls[__ACAM_CTRL_COUNT];
+    acam_ctrl_t ctrls[__ACAM_CTRL_COUNT];
     uint8_t *buffer;
 
-} camera_t;
+} acam_camera_t;
 
 /**
  * @brief A struct to help the user get and set
  * batches of camera controls.
  * 
  */
-typedef struct ctrls_struct
+typedef struct acam_ctrls_struct
 {
     int value[__ACAM_CTRL_COUNT];
 
-} ctrls_struct;
+} acam_ctrls_struct;
 
 
 //For details on functions, refer to the comments at the top of
 //each function definition in controls.c
 
-camera_t *open_cam(const char *cam_file, int *error); //start the camera
-int close_cam(camera_t *cam); //close the camera
-int capture_image(camera_t *cam, const char *file_name); //captures a single image
+acam_camera_t *acam_open_cam(const char *cam_file, int *error); //start the camera
+int acam_close_cam(acam_camera_t *cam); //close the camera
+int acam_capture_image(acam_camera_t *cam, const char *file_name); //captures a single image
 
-int get_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int *value); //get the current value of a control
-int set_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int value); //set the value of a control
+int acam_get_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int *value); //get the current value of a control
+int acam_set_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int value); //set the value of a control
 
-int save_file(const camera_t *cam, const char *fname); //save current control values and format to external file
-int load_file(const camera_t *cam, const char *fname); //load control values and format from external file into camera
+int acam_save_file(const acam_camera_t *cam, const char *fname); //save current control values and format to external file
+int acam_load_file(const acam_camera_t *cam, const char *fname); //load control values and format from external file into camera
 
-int save_struct(const camera_t *cam, ctrls_struct *controls); //save a ctrls_struct with current camera control values and format
-void save_default_struct(const camera_t *cam, ctrls_struct *controls); //save a ctrls_struct with default camera values and format
-int load_struct(const camera_t *cam, const ctrls_struct *controls); //load control values and format from ctrls_struct into camera
+int acam_save_struct(const acam_camera_t *cam, acam_ctrls_struct *ctrls); //save a acam_ctrls_struct with current camera control values and format
+void acam_save_default_struct(const acam_camera_t *cam, acam_ctrls_struct *ctrls); //save a acam_ctrls_struct with default camera values and format
+int acam_load_struct(const acam_camera_t *cam, const acam_ctrls_struct *ctrls); //load control values and format from acam_ctrls_struct into camera
 
-int reset_ctrl(const camera_t *cam, ctrl_tag_t ctrl); //resets the value of a single control to its default
-int reset_cam(const camera_t *cam); //resets all controls in camera to their defaults
+int acam_reset_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl); //resets the value of a single control to its default
+int acam_reset_all(const acam_camera_t *cam); //resets all controls in camera to their defaults
 
-int print_ctrl(const camera_t *cam, ctrl_tag_t ctrl); //print the value of a single control
-int print_ctrl_all(const camera_t *cam); //print values of all controls
-void print_defaults(const camera_t *cam); //print default values of all controls
-void print_bounds(const camera_t *cam); //print upper and lower bounds of all controls
-int print_caps(const camera_t *cam); //print camera capabilities
+int acam_print_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl); //print the value of a single control
+int acam_print_ctrl_all(const acam_camera_t *cam); //print values of all controls
+void acam_print_defaults(const acam_camera_t *cam); //print default values of all controls
+void acam_print_bounds(const acam_camera_t *cam); //print upper and lower bounds of all controls
+int acam_print_caps(const acam_camera_t *cam); //print camera capabilities
 
 #endif

@@ -43,7 +43,7 @@ const fmt_fields_t fmts[__ACAM_FMT_COUNT] = {
  * @brief Table used to access V4L2 ids of different camera controls.
  *
  */
-const ctrl_tag_t v4l2_id[__ACAM_CTRL_COUNT] = {
+const acam_ctrl_tag_t v4l2_id[__ACAM_CTRL_COUNT] = {
     V4L2_CID_BRIGHTNESS,
     V4L2_CID_CONTRAST,
     V4L2_CID_SATURATION,
@@ -60,34 +60,34 @@ const ctrl_tag_t v4l2_id[__ACAM_CTRL_COUNT] = {
     V4L2_CID_EXPOSURE_AUTO_PRIORITY};
 
 // function prototypes for private functions:
-static fmt_t get_fmt_tag(int fmt_type, int height);
-static int get_fmt(const camera_t *cam, int *value);
-static int set_fmt(const camera_t *cam, fmt_t fmt_tag);
-static int check_file_for_errors(const camera_t *cam, const char *fname);
-static int get_queryctrl(camera_t *cam, ctrl_tag_t ctrl, struct v4l2_queryctrl *query_out);
+static acam_fmt_t get_acam_fmt_tag(int acam_fmt_type, int height);
+static int get_fmt(const acam_camera_t *cam, int *value);
+static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag);
+static int check_file_for_errors(const acam_camera_t *cam, const char *fname);
+static int get_queryctrl(acam_camera_t *cam, acam_ctrl_tag_t ctrl, struct v4l2_queryctrl *query_out);
 static int xioctl(int fd, int request, void *arg);
-static int init_mmap(camera_t *cam);
+static int init_mmap(acam_camera_t *cam);
 
 /**
  * @brief Helps to interface between V4L2 query of selected pixel
  * format and the format ENUM values.
  *
- * @param fmt_type The V4L2_PIX_FMT enum for either YUYV or MJPEG.
+ * @param acam_fmt_type The V4L2_PIX_FMT enum for either YUYV or MJPEG.
  * @param height The height of the aspect ratio for above pixel format.
  * @return The format ENUM associated with the V4L2 pixel format/aspect ratio
- * (a 0-11 int). -1 if the fmt_type and pixel height do not match the ARDUCAM's specs.
+ * (a 0-11 int). -1 if the acam_fmt_type and pixel height do not match the ARDUCAM's specs.
  */
-static fmt_t get_fmt_tag(int fmt_type, int height)
+static acam_fmt_t get_acam_fmt_tag(int acam_fmt_type, int height)
 {
     for (int i = 0; i < __ACAM_FMT_COUNT; i++)
     {
-        if (height == fmts[i].height && fmt_type == fmts[i].v4l2_pix_fmt)
+        if (height == fmts[i].height && acam_fmt_type == fmts[i].v4l2_pix_fmt)
         {
             return i;
         }
     }
 
-    return -1; // Our camera does not have a pixel format that matches the ARDUCAM specs. Should this be __ACAM_FMT_COUNT?
+    return __ACAM_FMT_INVALID; // Our camera does not have a pixel format that matches the ARDUCAM specs. Should this be __ACAM_FMT_COUNT?
 }
 /**
  * @brief Get the format ENUM for the camera's current state.
@@ -97,7 +97,7 @@ static fmt_t get_fmt_tag(int fmt_type, int height)
  * @return exit status. 0 on success, errno on IOCTL failure, EBADFD if the pixel format
  * is not supported by ARDUCAM.
  */
-static int get_fmt(const camera_t *cam, int *value)
+static int get_fmt(const acam_camera_t *cam, int *value)
 {
     assert(cam && value);
 
@@ -112,7 +112,7 @@ static int get_fmt(const camera_t *cam, int *value)
         return errno;
     }
 
-    int ret = get_fmt_tag(fmt.fmt.pix.pixelformat, fmt.fmt.pix.height);
+    int ret = get_acam_fmt_tag(fmt.fmt.pix.pixelformat, fmt.fmt.pix.height);
     if (ret == -1)
     {
         DEBUG_PRINT(stderr, "Invalid pixel format detected for ARDUCAM.\n");
@@ -126,10 +126,10 @@ static int get_fmt(const camera_t *cam, int *value)
  * @brief Set the fmt object
  *
  * @param cam pointer to a cam struct
- * @param fmt_tag ENUM for camera format to which the camera will be set
+ * @param acam_fmt_tag ENUM for camera format to which the camera will be set
  * @return exit status. 0 on success, errno on IOCTL failure.
  */
-static int set_fmt(const camera_t *cam, fmt_t fmt_tag)
+static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag)
 {
     assert(cam);
 
@@ -137,9 +137,9 @@ static int set_fmt(const camera_t *cam, fmt_t fmt_tag)
     struct v4l2_format fmt = {0};
     fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     fmt.fmt.pix.field = V4L2_FIELD_NONE;
-    fmt.fmt.pix.width = fmts[fmt_tag].width;
-    fmt.fmt.pix.height = fmts[fmt_tag].height;
-    fmt.fmt.pix.pixelformat = fmts[fmt_tag].v4l2_pix_fmt;
+    fmt.fmt.pix.width = fmts[acam_fmt_tag].width;
+    fmt.fmt.pix.height = fmts[acam_fmt_tag].height;
+    fmt.fmt.pix.pixelformat = fmts[acam_fmt_tag].v4l2_pix_fmt;
 
     if (-1 == ioctl(cam->fd, VIDIOC_S_FMT, &fmt))
     {
@@ -153,13 +153,13 @@ static int set_fmt(const camera_t *cam, fmt_t fmt_tag)
  * @brief Get's the value of a control.
  *
  * @param cam a pointer to the cam struct
- * @param ctrl the ctrl_tag ENUM
+ * @param ctrl the acam_ctrl_tag ENUM
  * @param value the int into which @param ctrl's value will be passed. If @param ctrl is FORMAT, this will be
  * the number associated with the camera's current format ENUM.
  * @return exit status. 0 on success, errno on IOCTL failure, EBADF if the function retrieved a pixel format
  * not supported by ARDUCAM.
  */
-int get_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int *value)
+int acam_get_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int *value)
 {
     assert(cam && value);
 
@@ -189,7 +189,7 @@ int get_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int *value)
  * @brief Sets the value of a control.
  *
  * @param cam pointer to the cam struct
- * @param ctrl the ctrl_tag ENUM
+ * @param ctrl the acam_ctrl_tag ENUM
  * @param value the value to which we will set @param ctrl
  * @return exit status. 0 on success, errno on IOCTL failure.
  * Setting WHITE_BALANCE_TEMPERATURE or EXPOSURE_ABSOLUTE while
@@ -197,7 +197,7 @@ int get_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int *value)
  * a control to a value above/below its upper/lower bounds will result in success and
  * set the control's register to its max/min.
  */
-int set_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int value)
+int acam_set_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int value)
 {
     assert(cam);
 
@@ -211,11 +211,11 @@ int set_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int value)
     control.id = v4l2_id[ctrl];
     control.value = value;
 
-    /////////////////// BEGIN CHECKING FOR EDGE CASES ///////////////////////////////////////
+    // begin checking for edge cases
     if (ctrl == ACAM_WHITE_BALANCE_TEMPERATURE)
     {
         int value;
-        get_ctrl(cam, ACAM_AUTO_WHITE_BALANCE, &value);
+        acam_get_ctrl(cam, ACAM_AUTO_WHITE_BALANCE, &value);
         if (value == 1)
             return 0; // Still report this as a success
         // DEBUG_PRINT(stderr, "Cannot set WHITE_BALANCE_TEMPERATURE while AUTO_WHITE_BALANCE is on. Set WHITE_BALANCE to 0 to adjust WHITE_BALANCE_TEMPERATURE\n");
@@ -224,13 +224,13 @@ int set_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int value)
     if (ctrl == ACAM_EXPOSURE_ABSOLUTE)
     {
         int value;
-        get_ctrl(cam, ACAM_EXPOSURE_AUTO, &value);
+        acam_get_ctrl(cam, ACAM_EXPOSURE_AUTO, &value);
         if (value == 3)
             return 0; // Still report this as a success
         // DEBUG_PRINT(stderr, "Cannot set EXPOSURE_ABSOLUTE while EXPOSURE_AUTO is set to 3. Set EXPOSURE_AUTO to 1 to adjust exposure.\n");
     }
-    ///////////////////// DONE CHECKING FOR EDGE CASES/////////////////////////////////////
 
+    // Do the ioctl to the camera to set the control
     int ret = ioctl(cam->fd, VIDIOC_S_CTRL, &control); // set camera's control value to @param value
     if (ret == -1)
     {
@@ -262,7 +262,7 @@ int set_ctrl(const camera_t *cam, ctrl_tag_t ctrl, int value)
  * @param fname String of filename to which the output will be written.
  * @return exit status. 0 on success, errno on IOCTL/file write failure.
  */
-int save_file(const camera_t *cam, const char *fname)
+int acam_save_file(const acam_camera_t *cam, const char *fname)
 {
     assert(cam && fname);
 
@@ -273,24 +273,17 @@ int save_file(const camera_t *cam, const char *fname)
         DEBUG_PERROR("Unable to write file");
         return errno;
     }
-    // Design choice to abort if anything fails.
-    //  error checking loop -- makes sure camera can get all values
+
+    // writing loop
     for (int i = 0; i < __ACAM_CTRL_COUNT; i++)
     {
+        char val_char[64];
         int value;
-        int ret = get_ctrl(cam, i, &value);
+        int ret = acam_get_ctrl(cam, i, &value);
         if (ret != 0)
         {
             return ret; // get_ctrl failed
         }
-    }
-
-    // writing loop. Don't need to error check our get_ctrl calls as we've preprocessed these.
-    for (int i = 0; i < __ACAM_CTRL_COUNT; i++)
-    { // do this for all except FORMAT
-        char val_char[64];
-        int value;
-        get_ctrl(cam, i, &value);
 
         // writing process for normal controls
         if (i != ACAM_FORMAT)
@@ -300,8 +293,8 @@ int save_file(const camera_t *cam, const char *fname)
         // writing process for format
         else
         {
-            fmt_t fmt_tag = value; // for clarity -- value IS the fmt_tag
-            sprintf(val_char, "%s:%s_%d_%d\n", cam->ctrls[ACAM_FORMAT].name, fmts[fmt_tag].name, fmts[fmt_tag].width, fmts[fmt_tag].height);
+            acam_fmt_t acam_fmt_tag = value; // for clarity. value IS the acam_fmt_tag
+            sprintf(val_char, "%s:%s_%d_%d\n", cam->ctrls[ACAM_FORMAT].name, fmts[acam_fmt_tag].name, fmts[acam_fmt_tag].width, fmts[acam_fmt_tag].height);
         }
 
         fputs(val_char, out);
@@ -319,7 +312,7 @@ int save_file(const camera_t *cam, const char *fname)
  * @return exit status. 0 on success, errno for file open failure, EBADF for file formatting error.
  * Check error log for file formatting error details.
  */
-static int check_file_for_errors(const camera_t *cam, const char *fname)
+static int check_file_for_errors(const acam_camera_t *cam, const char *fname)
 {
     assert(cam && fname);
 
@@ -360,21 +353,21 @@ static int check_file_for_errors(const camera_t *cam, const char *fname)
             }
 
             int height = atoi(height_str);
-            fmt_t fmt_tag; // for clarity.
+            acam_fmt_t acam_fmt_tag; // for clarity.
             if (!strcmp("YUYV", format))
             {
-                fmt_tag = get_fmt_tag(V4L2_PIX_FMT_YUYV, height);
+                acam_fmt_tag = get_acam_fmt_tag(V4L2_PIX_FMT_YUYV, height);
             }
             else if (!strcmp("MJPEG", format))
             {
-                fmt_tag = get_fmt_tag(V4L2_PIX_FMT_MJPEG, height);
+                acam_fmt_tag = get_acam_fmt_tag(V4L2_PIX_FMT_MJPEG, height);
             }
             else
             {
                 DEBUG_PRINT(stderr, "Invalid pixel format detected for ARDUCAM. Format %s in file neither YUYV nor MJPEG\n", format);
                 return EBADFD;
             }
-            if (fmt_tag == -1)
+            if (acam_fmt_tag == __ACAM_FMT_INVALID)
             { // The pixel ratio detected for @param cam is not supported by the ARDUCAM
                 DEBUG_PRINT(stderr, "Invalid pixel format detected for ARDUCAM. Aspect ratio %s_%s in file not supported by ARDUCAM\n", width_str, height_str);
                 return EBADFD;
@@ -388,7 +381,7 @@ static int check_file_for_errors(const camera_t *cam, const char *fname)
         DEBUG_PRINT(stderr, "File format error: too many controls\n");
         return EBADF;
     }
-    if (i < __ACAM_CTRL_COUNT)
+    else if (i < __ACAM_CTRL_COUNT)
     {
         DEBUG_PRINT(stderr, "File format error: too few controls\n");
         return EBADF;
@@ -407,7 +400,7 @@ static int check_file_for_errors(const camera_t *cam, const char *fname)
  * errno for file open failure, EBADF for file formatting error.
  * Check error log for file formatting error details.
  */
-int load_file(const camera_t *cam, const char *fname)
+int acam_load_file(const acam_camera_t *cam, const char *fname)
 {
     assert(cam && fname);
 
@@ -429,32 +422,32 @@ int load_file(const camera_t *cam, const char *fname)
     while (fgets(line, sizeof(line), in) != NULL)
     {
         int ctrl_val;
-        char *ctrl_name = strtok(line, ":");
+        strtok(line, ":");
         char *ctrl_val_str = strtok(NULL, "\n");
         if (i != ACAM_FORMAT)
         { // the value is simply the number after the colon
             ctrl_val = atoi(ctrl_val_str);
         }
         else
-        { // We need to parse from format string to fmt_tag
+        { // We need to parse from format string to acam_fmt_tag
             char *format = strtok(ctrl_val_str, "_");
-            char *width_str = strtok(NULL, "_");
+            strtok(NULL, "_");
             char *height_str = strtok(NULL, "_");
 
             int height = atoi(height_str);
 
             if (!strcmp("YUYV", format))
             {
-                ctrl_val = get_fmt_tag(V4L2_PIX_FMT_YUYV, height); // the fmt_tag *is* the ctrl_val
+                ctrl_val = get_acam_fmt_tag(V4L2_PIX_FMT_YUYV, height); // the acam_fmt_tag *is* the ctrl_val
             }
             else if (!strcmp("MJPEG", format))
             {
-                ctrl_val = get_fmt_tag(V4L2_PIX_FMT_MJPEG, height);
+                ctrl_val = get_acam_fmt_tag(V4L2_PIX_FMT_MJPEG, height);
             }
             assert(ctrl_val >= 0 && ctrl_val < __ACAM_FMT_COUNT); // We've preprocessed the file to check for this -- this should be impossible to trigger.
         }
 
-        int ret = set_ctrl(cam, i, ctrl_val);
+        int ret = acam_set_ctrl(cam, i, ctrl_val);
         if (ret != 0) // we failed our IOCTL for set_ctrl
         {
             return ret;
@@ -470,16 +463,16 @@ int load_file(const camera_t *cam, const char *fname)
  * @brief Saves a struct of the camera's current control values
  *
  * @param cam the pointer to the cam struct
- * @param controls The struct to which the camera's current control values with be saved.
+ * @param ctrls The struct to which the camera's current control values with be saved.
  * @return exit status. 0 on success, errno on IOCTL failure.
  */
-int save_struct(const camera_t *cam, ctrls_struct *ctrls)
+int acam_save_struct(const acam_camera_t *cam, acam_ctrls_struct *ctrls)
 {
     assert(cam && ctrls);
     for (int i = 0; i < __ACAM_CTRL_COUNT; i++)
     {
         int value;
-        int ret = get_ctrl(cam, i, &value);
+        int ret = acam_get_ctrl(cam, i, &value);
         if (ret != 0)
         {
             return ret;
@@ -491,12 +484,12 @@ int save_struct(const camera_t *cam, ctrls_struct *ctrls)
 }
 
 /**
- * @brief Saves default values of camera controls to a ctrls_struct.
+ * @brief Saves default values of camera controls to a acam_ctrls_struct.
  *
  * @param cam pointer to the cam struct.
- * @param controls the ctrls_struct to which the default values will be saved
+ * @param ctrls the acam_ctrls_struct to which the default values will be saved
  */
-void save_default_struct(const camera_t *cam, ctrls_struct *ctrls)
+void acam_save_default_struct(const acam_camera_t *cam, acam_ctrls_struct *ctrls)
 {
     assert(cam && ctrls);
 
@@ -507,19 +500,19 @@ void save_default_struct(const camera_t *cam, ctrls_struct *ctrls)
 }
 
 /**
- * @brief Loads values from a ctrls_struct into the camera.
+ * @brief Loads values from a acam_ctrls_struct into the camera.
  *
  * @param cam a pointer to a camera struct
- * @param controls
+ * @param ctrls
  * @return exit status. 0 on success, errno on failure.
  */
-int load_struct(const camera_t *cam, const ctrls_struct *ctrls)
+int acam_load_struct(const acam_camera_t *cam, const acam_ctrls_struct *ctrls)
 {
     assert(cam && ctrls);
     for (int i = 0; i < __ACAM_CTRL_COUNT; i++)
     {
         int value = ctrls->value[i];
-        int ret = set_ctrl(cam, i, value);
+        int ret = acam_set_ctrl(cam, i, value);
         if (ret != 0)
         {
             return ret;
@@ -536,10 +529,10 @@ int load_struct(const camera_t *cam, const ctrls_struct *ctrls)
  * @param ctrl the control value which will be reset
  * @return exit status. 0 on success, errno on IOCTL failure.
  */
-int reset_ctrl(const camera_t *cam, ctrl_tag_t ctrl)
+int acam_reset_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl)
 {
 
-    int ret = set_ctrl(cam, ctrl, cam->ctrls[ctrl].default_val);
+    int ret = acam_set_ctrl(cam, ctrl, cam->ctrls[ctrl].default_val);
 
     return ret;
 }
@@ -550,13 +543,13 @@ int reset_ctrl(const camera_t *cam, ctrl_tag_t ctrl)
  * @param cam a pointer to a cam struct
  * @return exit status. 0 on success, errno on IOCTL failure.
  */
-int reset_cam(const camera_t *cam)
+int acam_reset_all(const acam_camera_t *cam)
 {
 
     for (int i = 0; i < __ACAM_CTRL_COUNT; i++)
     {
 
-        int ret = reset_ctrl(cam, i);
+        int ret = acam_reset_ctrl(cam, i);
         if (ret != 0)
         {
             return ret;
@@ -572,11 +565,11 @@ int reset_cam(const camera_t *cam)
  * @param ctrl The control to be printed
  * @return exit status. 0 on success, errno on ioctl failure.
  */
-int print_ctrl(const camera_t *cam, ctrl_tag_t ctrl)
+int acam_print_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl)
 {
     assert(cam);
     int value;
-    int ret = get_ctrl(cam, ctrl, &value);
+    int ret = acam_get_ctrl(cam, ctrl, &value);
     if (ret != 0)
     {
         return ret;
@@ -599,12 +592,12 @@ int print_ctrl(const camera_t *cam, ctrl_tag_t ctrl)
  * @param cam
  * @return 0 on success, errno on IOCTL failure.
  */
-int print_ctrl_all(const camera_t *cam)
+int acam_print_ctrl_all(const acam_camera_t *cam)
 {
     assert(cam);
     for (int i = 0; i < __ACAM_CTRL_COUNT; i++)
     {
-        int ret = print_ctrl(cam, i);
+        int ret = acam_print_ctrl(cam, i);
         if (ret != 0)
         {
             return ret;
@@ -618,7 +611,7 @@ int print_ctrl_all(const camera_t *cam)
  *
  * @param cam pointer to the cam struct
  */
-void print_defaults(const camera_t *cam)
+void acam_print_defaults(const acam_camera_t *cam)
 {
     assert(cam);
     printf("DEFAULTS:\n");
@@ -633,7 +626,7 @@ void print_defaults(const camera_t *cam)
  *
  * @param cam pointer to the cam struct
  */
-void print_bounds(const camera_t *cam)
+void acam_print_bounds(const acam_camera_t *cam)
 {
     assert(cam);
     printf("BOUNDS:\n");
@@ -650,7 +643,7 @@ void print_bounds(const camera_t *cam)
  * @param query_out The struct to which the queryctrl will be written.
  * @return exit status. 0 on success, errno on IOCTL failure.
  */
-static int get_queryctrl(camera_t *cam, ctrl_tag_t ctrl, struct v4l2_queryctrl *query_out)
+static int get_queryctrl(acam_camera_t *cam, acam_ctrl_tag_t ctrl, struct v4l2_queryctrl *query_out)
 {
     assert(cam && query_out);
 
@@ -684,10 +677,11 @@ static int get_queryctrl(camera_t *cam, ctrl_tag_t ctrl, struct v4l2_queryctrl *
  * On function exit, @param error will be errno on file open/ioctl failure.
  * @return Pointer to cam struct for @param cam_file on success, NULL on failure.
  */
-camera_t *open_cam(const char *cam_file, int *error)
+acam_camera_t *acam_open_cam(const char *cam_file, int *error)
 {
-    assert(cam_file);
+    assert(cam_file && error);
 
+    //attempt to open file descriptor for camera
     int fd = open(cam_file, O_RDWR | O_NONBLOCK, 0);
     if (fd == -1)
     {
@@ -696,7 +690,7 @@ camera_t *open_cam(const char *cam_file, int *error)
         return NULL;
     }
     // malloc our camera struct
-    camera_t *cam = malloc(sizeof(camera_t));
+    acam_camera_t *cam = malloc(sizeof(acam_camera_t));
     if (cam == NULL)
     {
         DEBUG_PERROR("Failed to malloc for camera struct");
@@ -715,9 +709,9 @@ camera_t *open_cam(const char *cam_file, int *error)
         if (ret != 0)
         {
             *error = ret;
+            return NULL;
         }
-
-        strcpy(cam->ctrls[i].name, query.name);
+        strcpy(cam->ctrls[i].name, (char *)query.name);
         cam->ctrls[i].v4l2_id = query.id;
         cam->ctrls[i].max_value = query.maximum;
         cam->ctrls[i].min_value = query.minimum;
@@ -725,7 +719,7 @@ camera_t *open_cam(const char *cam_file, int *error)
     }
     strcpy(cam->ctrls[ACAM_FORMAT].name, "Format");
     cam->ctrls[ACAM_FORMAT].default_val = ACAM_MJPEG_1920_1080;
-    
+
     cam->buffer = NULL;
 
     return cam;
@@ -737,7 +731,7 @@ camera_t *open_cam(const char *cam_file, int *error)
  * @param cam the pointer to the camera structure.
  * @return exit status. 0 on success, errno on failure
  */
-int close_cam(camera_t *cam)
+int acam_close_cam(acam_camera_t *cam)
 {
 
     assert(cam);
@@ -774,7 +768,7 @@ static int xioctl(int fd, int request, void *arg)
  * @param cam the pointer to the camera struct.
  * @return exit status. 0 on success, errno on failure.
  */
-int print_caps(const camera_t *cam)
+int acam_print_caps(const acam_camera_t *cam)
 {
     assert(cam != NULL);
     struct v4l2_capability caps = {0};
@@ -793,8 +787,8 @@ int print_caps(const camera_t *cam)
            caps.driver,
            caps.card,
            caps.bus_info,
-           (caps.version >> 16) && 0xff,
-           (caps.version >> 24) && 0xff,
+           (caps.version >> 16) & 0xff,
+           (caps.version >> 24) & 0xff,
            caps.capabilities);
 
     struct v4l2_cropcap cropcap = {0};
@@ -854,9 +848,10 @@ int print_caps(const camera_t *cam)
  * @brief Initializes the memory map that stores bytes captured by the camera.
  *
  * @param cam the pointer to the camera object.
- * @return exit status. 0 on success, errno on failure.
+ * @return exit status. 0 on success, errno on ioctl failure, ENOMEM on failure
+ * to map memory to user space.
  */
-static int init_mmap(camera_t *cam)
+static int init_mmap(acam_camera_t *cam)
 {
     assert(cam);
 
@@ -882,6 +877,11 @@ static int init_mmap(camera_t *cam)
     }
 
     cam->buffer = mmap(NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, cam->fd, buf.m.offset);
+    if (cam->buffer == NULL)
+    {
+        DEBUG_PRINT(stderr, "Error mapping memory");
+        return ENOMEM;
+    }
 
     return 0;
 }
@@ -891,9 +891,10 @@ static int init_mmap(camera_t *cam)
  *
  * @param cam the pointer to the camera file
  * @param file_name The file destination for the image.
- * @return exit status. 0 on success, errno on failure.
+ * @return exit status. 0 on success, errno on ioctl failure, ENOMEM on failure
+ * to map/unmap memory to/from user space.
  */
-int capture_image(camera_t *cam, const char *file_name)
+int acam_capture_image(acam_camera_t *cam, const char *file_name)
 {
     assert(cam && file_name);
 
@@ -919,7 +920,7 @@ int capture_image(camera_t *cam, const char *file_name)
     FD_ZERO(&fds);
     FD_SET(cam->fd, &fds);
     struct timeval tv = {0};
-    tv.tv_sec = 2;
+    tv.tv_sec = 1;
     int r = select(cam->fd + 1, &fds, NULL, NULL, &tv);
     if (-1 == r)
     {
@@ -933,20 +934,46 @@ int capture_image(camera_t *cam, const char *file_name)
         return errno;
     }
 
+    // write contents of buffer to local file
     int outfd = open(file_name, O_RDWR | O_CREAT, 0644);
     if (outfd == -1)
     {
         DEBUG_PRINT(stderr, "Problem opening file %s: %s\n", file_name, strerror(errno));
         return errno;
     }
+
     int ret = write(outfd, cam->buffer, buf.bytesused);
     if (ret == -1)
     {
         DEBUG_PRINT(stderr, "Problem writing to file %s: %s\n", file_name, strerror(errno));
         return errno;
     }
-
     close(outfd);
+
+    // clear buffers in the camera and turn streaming off
+    if (-1 == xioctl(cam->fd, VIDIOC_STREAMOFF, &buf.type))
+    {
+        DEBUG_PERROR("End Capture");
+        return errno;
+    }
+
+    struct v4l2_requestbuffers free = {0};
+    free.count = 0;
+    free.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    free.memory = V4L2_MEMORY_MMAP;
+    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &free)) // this is the line, for some reason renders camera busy indefinitely
+    {
+        DEBUG_PERROR("Requesting Buffer");
+        return errno;
+    }
+
+    // free the mapped memory
+    ret = munmap(cam->buffer, sizeof(cam->buffer));
+    if (ret == -1)
+    {
+        DEBUG_PRINT(stderr, "Error unmapping memeory for user-pointer");
+        return ENOMEM;
+    }
 
     return 0;
 }
