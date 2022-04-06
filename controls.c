@@ -677,7 +677,7 @@ static int get_queryctrl(acam_camera_t *cam, acam_ctrl_tag_t ctrl, struct v4l2_q
  * On function exit, @param error will be errno on file open/ioctl failure.
  * @return Pointer to cam struct for @param cam_file on success, NULL on failure.
  */
-acam_camera_t *acam_open_cam(const char *cam_file, int *error)
+acam_camera_t *acam_open(const char *cam_file, int *error)
 {
     assert(cam_file && error);
 
@@ -731,7 +731,7 @@ acam_camera_t *acam_open_cam(const char *cam_file, int *error)
  * @param cam the pointer to the camera structure.
  * @return exit status. 0 on success, errno on failure
  */
-int acam_close_cam(acam_camera_t *cam)
+int acam_close(acam_camera_t *cam)
 {
 
     assert(cam);

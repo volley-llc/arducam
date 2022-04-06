@@ -121,8 +121,8 @@ typedef struct acam_ctrls_struct
 //For details on functions, refer to the comments at the top of
 //each function definition in controls.c
 
-acam_camera_t *acam_open_cam(const char *cam_file, int *error); //start the camera
-int acam_close_cam(acam_camera_t *cam); //close the camera
+acam_camera_t *acam_open(const char *cam_file, int *error); //start the camera
+int acam_close(acam_camera_t *cam); //close the camera
 int acam_capture_image(acam_camera_t *cam, const char *file_name); //captures a single image
 
 int acam_get_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int *value); //get the current value of a control

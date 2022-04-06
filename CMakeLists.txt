@@ -9,6 +9,9 @@ enable_testing()
 
 add_executable(main "main.c" "controls.c" "controls.h" "capture.c" "capture.h")
 
+set(SOURCE_FILES controls.c controls.h)
+add_library(ArduCam STATIC ${SOURCE_FILES})
+
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})
 set(CPACK_PROJECT_VERSION ${PROJECT_VERSION})
 include(CPack)
