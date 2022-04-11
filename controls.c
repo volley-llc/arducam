@@ -63,7 +63,7 @@ const acam_ctrl_tag_t v4l2_id[__ACAM_CTRL_COUNT] = {
 static acam_fmt_t get_acam_fmt_tag(int acam_fmt_type, int height);
 static int get_fmt(const acam_camera_t *cam, int *value);
 static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag);
-static int check_file_for_errors(const acam_camera_t *cam, const char *fname);
+static int acam_check_json_for_errors(const acam_camera_t *cam, const char *fname);
 static int get_queryctrl(acam_camera_t *cam, acam_ctrl_tag_t ctrl, struct v4l2_queryctrl *query_out);
 static int xioctl(int fd, int request, void *arg);
 static int init_mmap(acam_camera_t *cam);
@@ -262,7 +262,7 @@ int acam_set_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int value)
  * @param fname String of filename to which the output will be written.
  * @return exit status. 0 on success, errno on IOCTL/file write failure.
  */
-int acam_save_file(const acam_camera_t *cam, const char *fname)
+int acam_save_json(const acam_camera_t *cam, const char *fname)
 {
     assert(cam && fname);
 
@@ -270,14 +270,17 @@ int acam_save_file(const acam_camera_t *cam, const char *fname)
     FILE *out = fopen(fname, "w+");
     if (out == NULL)
     {
-        DEBUG_PERROR("Unable to write file");
+        DEBUG_PERROR("Unable to write json file");
         return errno;
     }
 
-    // writing loop
+    // create the json object
+    json_object *jobj = json_object_new_object();
+
+    // writing json object
     for (int i = 0; i < __ACAM_CTRL_COUNT; i++)
     {
-        char val_char[64];
+        json_object *jvalue;
         int value;
         int ret = acam_get_ctrl(cam, i, &value);
         if (ret != 0)
@@ -288,19 +291,23 @@ int acam_save_file(const acam_camera_t *cam, const char *fname)
         // writing process for normal controls
         if (i != ACAM_FORMAT)
         {
-            sprintf(val_char, "%s:%d\n", cam->ctrls[i].name, value);
+            jvalue = json_object_new_int(value);
         }
         // writing process for format
         else
         {
             acam_fmt_t acam_fmt_tag = value; // for clarity. value IS the acam_fmt_tag
-            sprintf(val_char, "%s:%s_%d_%d\n", cam->ctrls[ACAM_FORMAT].name, fmts[acam_fmt_tag].name, fmts[acam_fmt_tag].width, fmts[acam_fmt_tag].height);
+            char format_char[32];
+            sprintf(format_char, "%s_%d_%d", fmts[acam_fmt_tag].name, fmts[acam_fmt_tag].width, fmts[acam_fmt_tag].height);
+            jvalue = json_object_new_string(format_char);
         }
 
-        fputs(val_char, out);
+        json_object_object_add(jobj, cam->ctrls[i].name, jvalue);
     }
 
     fclose(out);
+
+    json_object_to_file_ext(fname, jobj, 0);
 
     return 0;
 }
@@ -312,43 +319,52 @@ int acam_save_file(const acam_camera_t *cam, const char *fname)
  * @return exit status. 0 on success, errno for file open failure, EBADF for file formatting error.
  * Check error log for file formatting error details.
  */
-static int check_file_for_errors(const acam_camera_t *cam, const char *fname)
+static int acam_check_json_for_errors(const acam_camera_t *cam, const char *fname)
 {
     assert(cam && fname);
 
-    // make sure we can open file
     FILE *in = fopen(fname, "r");
     if (in == NULL)
     {
         DEBUG_PERROR("Unable to read file");
         return errno;
     }
+    char jsonstr[50000];
+    fread(jsonstr, 50000, 1, in);
+    fclose(in);
 
-    char line[64];
-    int i = 0;
-    while (fgets(line, sizeof(line), in) != NULL)
+    json_object *parsed_json = json_tokener_parse(jsonstr);
+
+    for (int i = 0; i < __ACAM_CTRL_COUNT; i++)
     {
-        char *ctrl_name = strtok(line, ":");
-        if (strcmp(ctrl_name, cam->ctrls[i].name))
+        json_object *ctrl_val_obj = NULL;
+        json_object_object_get_ex(parsed_json, cam->ctrls[i].name, &ctrl_val_obj);
+        // Check for ordering/spelling of controls in json file
+        if (!ctrl_val_obj)
         {
-            DEBUG_PRINT(stderr, "Control ordering/spelling error. Expected %s, got %s\n", cam->ctrls[i].name, ctrl_name);
+            DEBUG_PRINT(stderr, "Control ordering/spelling error. No instance of %s found in input file %s\n", cam->ctrls[i].name, fname);
             return EBADF;
         }
-        char *ctrl_val_str = strtok(NULL, "\n");
-        if (ctrl_val_str == NULL)
+        // if the control is not format, check to be sure that we are parsing an int value.
+        if (i != ACAM_FORMAT)
         {
-            DEBUG_PRINT(stderr, "File format error: format should be \"CONTROL_NAME:CONTROL_VALUE\"\n");
-            return EBADF;
+            int is_int = json_object_is_type(ctrl_val_obj, json_type_int);
+            if (!is_int)
+            {
+                DEBUG_PRINT(stderr, "Bad value for %s in file %s. Value should be integer\n", cam->ctrls[i].name, fname);
+                return EBADF;
+            }
         }
-
-        if (i == ACAM_FORMAT)
+        // if control is format, we need to check to be sure that the format value is valid. This is much harder
+        else
         {
+            char *ctrl_val_str = json_object_get_string(ctrl_val_obj);
             char *format = strtok(ctrl_val_str, "_");
             char *width_str = strtok(NULL, "_");
             char *height_str = strtok(NULL, "_");
             if (format == NULL || width_str == NULL || height_str == NULL)
             {
-                DEBUG_PRINT(stderr, "File format error: pixel format should be written as \"Format:PIXELFORMAT_WIDTH_HEIGHT\"\n");
+                DEBUG_PRINT(stderr, "File format error in %s: pixel format should be written as \"Format:PIXELFORMAT_WIDTH_HEIGHT\"\n", fname);
                 return EBADF;
             }
 
@@ -364,35 +380,22 @@ static int check_file_for_errors(const acam_camera_t *cam, const char *fname)
             }
             else
             {
-                DEBUG_PRINT(stderr, "Invalid pixel format detected for ARDUCAM. Format %s in file neither YUYV nor MJPEG\n", format);
-                return EBADFD;
+                DEBUG_PRINT(stderr, "Invalid pixel format detected for ARDUCAM. Format %s in file %s is neither YUYV nor MJPEG\n", format, fname);
+                return EBADF;
             }
             if (acam_fmt_tag == __ACAM_FMT_INVALID)
             { // The pixel ratio detected for @param cam is not supported by the ARDUCAM
                 DEBUG_PRINT(stderr, "Invalid pixel format detected for ARDUCAM. Aspect ratio %s_%s in file not supported by ARDUCAM\n", width_str, height_str);
-                return EBADFD;
+                return EBADF;
             }
         }
-
-        i = i + 1;
-    }
-    if (i > __ACAM_CTRL_COUNT)
-    {
-        DEBUG_PRINT(stderr, "File format error: too many controls\n");
-        return EBADF;
-    }
-    else if (i < __ACAM_CTRL_COUNT)
-    {
-        DEBUG_PRINT(stderr, "File format error: too few controls\n");
-        return EBADF;
     }
 
-    fclose(in);
     return 0;
 }
 
 /**
- * @brief Loads values from file into camera.
+ * @brief Loads values from json file into camera.
  *
  * @param cam pointer to the cam struct
  * @param fname String of filename from which to load data.
@@ -400,12 +403,12 @@ static int check_file_for_errors(const acam_camera_t *cam, const char *fname)
  * errno for file open failure, EBADF for file formatting error.
  * Check error log for file formatting error details.
  */
-int acam_load_file(const acam_camera_t *cam, const char *fname)
+int acam_load_json(const acam_camera_t *cam, const char *fname)
 {
     assert(cam && fname);
 
     // check file for errors
-    int ret = check_file_for_errors(cam, fname);
+    int ret = acam_check_json_for_errors(cam, fname);
     if (ret != 0)
     {
         return ret;
@@ -417,19 +420,29 @@ int acam_load_file(const acam_camera_t *cam, const char *fname)
         DEBUG_PERROR("Unable to read file");
         return errno;
     }
-    int i = 0;
-    char line[50];
-    while (fgets(line, sizeof(line), in) != NULL)
+    //read file into a buffer
+    char jsonstr[50000];
+    fread(jsonstr, 50000, 1, in);
+    //close file
+    fclose(in);
+
+    //create json object
+    json_object *parsed_json = json_tokener_parse(jsonstr);
+
+    //begin looping through controls
+    for (int i = 0; i < __ACAM_CTRL_COUNT; i++)
     {
+
+        json_object *ctrl_val_obj = NULL;
+        json_object_object_get_ex(parsed_json, cam->ctrls[i].name, &ctrl_val_obj);
         int ctrl_val;
-        strtok(line, ":");
-        char *ctrl_val_str = strtok(NULL, "\n");
         if (i != ACAM_FORMAT)
-        { // the value is simply the number after the colon
-            ctrl_val = atoi(ctrl_val_str);
+        {
+            ctrl_val = json_object_get_int(ctrl_val_obj);
         }
         else
-        { // We need to parse from format string to acam_fmt_tag
+        {
+            char *ctrl_val_str = json_object_get_string(ctrl_val_obj);
             char *format = strtok(ctrl_val_str, "_");
             strtok(NULL, "_");
             char *height_str = strtok(NULL, "_");
@@ -446,18 +459,15 @@ int acam_load_file(const acam_camera_t *cam, const char *fname)
             }
             assert(ctrl_val >= 0 && ctrl_val < __ACAM_FMT_COUNT); // We've preprocessed the file to check for this -- this should be impossible to trigger.
         }
-
         int ret = acam_set_ctrl(cam, i, ctrl_val);
         if (ret != 0) // we failed our IOCTL for set_ctrl
         {
             return ret;
         }
-
-        i = i + 1;
     }
-
     return 0;
 }
+
 
 /**
  * @brief Saves a struct of the camera's current control values
@@ -622,7 +632,7 @@ void acam_print_defaults(const acam_camera_t *cam)
 }
 
 /**
- * @brief prints all of the default values for the camera
+ * @brief prints all of the bounds values for the camera
  *
  * @param cam pointer to the cam struct
  */
@@ -681,7 +691,7 @@ acam_camera_t *acam_open(const char *cam_file, int *error)
 {
     assert(cam_file && error);
 
-    //attempt to open file descriptor for camera
+    // attempt to open file descriptor for camera
     int fd = open(cam_file, O_RDWR | O_NONBLOCK, 0);
     if (fd == -1)
     {

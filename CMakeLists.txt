@@ -1,4 +1,9 @@
 cmake_minimum_required(VERSION 3.0.0)
+
+set(CMAKE_C_COMPILER /usr/bin/gcc)
+set(CMAKE_CXX_COMPILER /usr/bin/g++)
+set(CMAKE_BUILD_TYPE Debug)
+
 project(ArduCam VERSION 0.1.0)
 set(CMAKE_C_STANDARD 99)
 
@@ -8,6 +13,7 @@ include(CTest)
 enable_testing()
 
 add_executable(main "main.c" "controls.c" "controls.h" "capture.c" "capture.h")
+target_link_libraries(main json-c)
 
 set(SOURCE_FILES controls.c controls.h)
 add_library(ArduCam STATIC ${SOURCE_FILES})

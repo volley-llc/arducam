@@ -5,7 +5,7 @@
 Boots the camera.
 * Initializes the following in the camera struct:
  `cam->fd`: the camera's file descriptor.
-`cam->ctrls`: The list of controls belonging to the minicam. The control struct includes name and default/min/max values.
+`cam->ctrls`: The list of controls belonging to the minicam. The control struct includes name, as well as default/min/max values.
 `cam->buffer` The memory map which is used to store bits before they are written to an image file.
 * `@param cam_file` the string for the file name of the camera. Usually one of the video files in the /dev mount.
 * `@param error` Pointer to an integer which will store the error number on failure.
@@ -40,13 +40,13 @@ Sets the value of a control.
 	
 NOTE: Setting WHITE_BALANCE_TEMPERATURE or EXPOSURE_ABSOLUTE while their respective auto-set functions are on will result in success. Setting a control to a value above/below its upper/lower bounds will both result in success and set the control's register to its max/min.
 ______________________________
-####  int acam_save_file(const acam_camera_t *cam, const char *fname)
+####  int acam_save_json(const acam_camera_t *cam, const char *fname)
 Writes camera's current values to a file.
 * `@param cam` pointer to cam struct.
 * `@param fname` String of filename to which the output will be written.
 * `@return` exit status. 0 on success, errno on IOCTL/file write failure.
 ______________________________________________________
-####  int acam_load_file(const acam_camera_t *cam, const char *fname)
+####  int acam_load_json(const acam_camera_t *cam, const char *fname)
 Loads values from file into camera.
 * `@param cam` pointer to the cam struct
 * `@param fname` String of filename from which to load data.
@@ -81,19 +81,19 @@ Resets a control to its default value
 ____________________________________________________
 
 #### int acam_reset_all(const acam_camera_t *cam)
-Resets the camera to its default values
+Resets the camera to all of its default values
 * `@param cam` a pointer to a cam struct
 * `@return` exit status. 0 on success, errno on IOCTL failure.
 ___________________________________________
 
 #### int acam_print_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl)
-Prints a single control's value to the console.
+Prints a single control's value.
 * `@param cam` Pointer to a cam struct
 * `@param ctrl` The control to be printed
 * `@return` exit status. 0 on success, errno on ioctl failure.
 __________________________________________________
 #### int acam_print_ctrl_all(const acam_camera_t *cam)
-Prints the camera's controls and their current values
+Prints all of the camera's controls and their current values
 * `@param` cam a pointer to the cam struct
 * `@return` 0 on success, errno on IOCTL failure.
 ______________________________
@@ -102,7 +102,7 @@ prints all of the default values for the camera
 * `@param cam` pointer to the cam struct
 _____________________________________________
 #### void acam_print_bounds(const acam_camera_t *cam)
-prints all of the default values for the camera
+prints all of the bounds values for the camera
 * `@param cam` pointer to the cam struct
 ______________________________________
 #### int acam_print_caps(const acam_camera_t *cam)
