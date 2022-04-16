@@ -12,10 +12,7 @@ set(CMAKE_C_STANDARD 99)
 include(CTest)
 enable_testing()
 
-add_executable(main "main.c" "controls.c" "controls.h" "capture.c" "capture.h")
-target_link_libraries(main json-c)
-
-set(SOURCE_FILES controls.c controls.h)
+set(SOURCE_FILES acam_control.c acam_control.h)
 add_library(ArduCam STATIC ${SOURCE_FILES})
 
 set(CPACK_PROJECT_NAME ${PROJECT_NAME})

@@ -129,9 +129,6 @@ int acam_capture_image(acam_camera_t *cam, const char *file_name); //captures a 
 int acam_get_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int *value); //get the current value of a control
 int acam_set_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int value); //set the value of a control
 
-int acam_save_json(const acam_camera_t *cam, const char *fname); //save current control values and format to external file
-int acam_load_json(const acam_camera_t *cam, const char *fname); //load control values and format from external file into camera
-
 int acam_save_struct(const acam_camera_t *cam, acam_ctrls_struct *ctrls); //save a acam_ctrls_struct with current camera control values and format
 void acam_save_default_struct(const acam_camera_t *cam, acam_ctrls_struct *ctrls); //save a acam_ctrls_struct with default camera values and format
 int acam_load_struct(const acam_camera_t *cam, const acam_ctrls_struct *ctrls); //load control values and format from acam_ctrls_struct into camera
