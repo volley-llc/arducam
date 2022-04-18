@@ -1,6 +1,10 @@
 #ifndef CONTROLS_CAM_LIB
 #define CONTROLS_CAM_LIB
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -141,5 +145,9 @@ int acam_print_ctrl_all(const acam_camera_t *cam); //print values of all control
 void acam_print_defaults(const acam_camera_t *cam); //print default values of all controls
 void acam_print_bounds(const acam_camera_t *cam); //print upper and lower bounds of all controls
 int acam_print_caps(const acam_camera_t *cam); //print camera capabilities
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
