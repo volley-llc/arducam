@@ -103,7 +103,7 @@ typedef struct
  * about the ARDUCAM.
  * 
  */
-typedef struct camera
+typedef struct
 {
     int fd;
     acam_ctrl_t ctrls[__ACAM_CTRL_COUNT];
@@ -116,7 +116,7 @@ typedef struct camera
  * batches of camera controls.
  * 
  */
-typedef struct acam_ctrls_struct
+typedef struct
 {
     int value[__ACAM_CTRL_COUNT];
 
