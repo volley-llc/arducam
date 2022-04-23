@@ -66,6 +66,7 @@ static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag);
 static int get_queryctrl(acam_camera_t *cam, acam_ctrl_tag_t ctrl, struct v4l2_queryctrl *query_out);
 static int xioctl(int fd, int request, void *arg);
 static int init_mmap(acam_camera_t *cam);
+static int write_to_file(acam_camera_t *cam, const char *file_name, unsigned int buffsize);;
 
 /**
  * @brief Helps to interface between V4L2 query of selected pixel
@@ -164,7 +165,7 @@ int acam_get_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int *value)
 
     if (ctrl == ACAM_FORMAT)
     {
-        return get_fmt(cam, value); // format behaves differently from other controls, so we return this
+        return get_fmt(cam, value); // format behaves differently from other controls, so we return the result of get_fmt
     }
 
     // Set up the struct which will receive info from the ioctl
@@ -254,7 +255,6 @@ int acam_set_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int value)
         return 0;
     }
 }
-
 /**
  * @brief Saves a struct of the camera's current control values
  *
@@ -558,6 +558,39 @@ static int xioctl(int fd, int request, void *arg)
 }
 
 /**
+ * @brief Writes an image from the camera to a file. Hard-coded to use the camera struct's buffer
+ * 
+ * @param cam 
+ * @param file_name 
+ * @param buffsize 
+ * @return int 
+ */
+static int write_to_file(acam_camera_t *cam, const char *file_name, unsigned int buffsize){
+    // write contents of buffer to local file
+    int outfd = open(file_name, O_RDWR | O_CREAT, 0644);
+    if (outfd == -1)
+    {
+        DEBUG_PRINT(stderr, "Problem opening file %s: %s\n", file_name, strerror(errno));
+        return errno;
+    }
+    
+    int ret = write(outfd, cam->buffer, buffsize);
+    if (ret == -1)
+    {
+        DEBUG_PRINT(stderr, "Problem writing to file %s: %s\n", file_name, strerror(errno));
+        return errno;
+    }
+    ret = close(outfd);
+    if (ret == -1)
+    {
+        DEBUG_PRINT(stderr, "Problem closing file %s: %s\n", file_name, strerror(errno));
+        return errno;
+    }
+
+    return 0;
+}
+
+/**
  * @brief Prints capabilites of the camera, along with selected
  * recording modes.
  *
@@ -730,21 +763,12 @@ int acam_capture_image(acam_camera_t *cam, const char *file_name)
         return errno;
     }
 
-    // write contents of buffer to local file
-    int outfd = open(file_name, O_RDWR | O_CREAT, 0644);
-    if (outfd == -1)
-    {
-        DEBUG_PRINT(stderr, "Problem opening file %s: %s\n", file_name, strerror(errno));
-        return errno;
+    // write contents of buffer to local file:
+    int ret = write_to_file(cam, file_name, buf.bytesused);
+    if (ret != 0){
+        //we failed our write to file
+        return ret;
     }
-
-    int ret = write(outfd, cam->buffer, buf.bytesused);
-    if (ret == -1)
-    {
-        DEBUG_PRINT(stderr, "Problem writing to file %s: %s\n", file_name, strerror(errno));
-        return errno;
-    }
-    close(outfd);
 
     // clear buffers in the camera and turn streaming off
     if (-1 == xioctl(cam->fd, VIDIOC_STREAMOFF, &buf.type))
