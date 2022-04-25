@@ -66,7 +66,6 @@ static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag);
 static int get_queryctrl(acam_camera_t *cam, acam_ctrl_tag_t ctrl, struct v4l2_queryctrl *query_out);
 static int xioctl(int fd, int request, void *arg);
 static int init_mmap(acam_camera_t *cam);
-static int write_to_file(acam_camera_t *cam, const char *file_name, unsigned int buffsize);;
 
 /**
  * @brief Helps to interface between V4L2 query of selected pixel
@@ -558,39 +557,6 @@ static int xioctl(int fd, int request, void *arg)
 }
 
 /**
- * @brief Writes an image from the camera to a file. Hard-coded to use the camera struct's buffer
- * 
- * @param cam 
- * @param file_name 
- * @param buffsize 
- * @return int 
- */
-static int write_to_file(acam_camera_t *cam, const char *file_name, unsigned int buffsize){
-    // write contents of buffer to local file
-    int outfd = open(file_name, O_RDWR | O_CREAT, 0644);
-    if (outfd == -1)
-    {
-        DEBUG_PRINT(stderr, "Problem opening file %s: %s\n", file_name, strerror(errno));
-        return errno;
-    }
-    
-    int ret = write(outfd, cam->buffer, buffsize);
-    if (ret == -1)
-    {
-        DEBUG_PRINT(stderr, "Problem writing to file %s: %s\n", file_name, strerror(errno));
-        return errno;
-    }
-    ret = close(outfd);
-    if (ret == -1)
-    {
-        DEBUG_PRINT(stderr, "Problem closing file %s: %s\n", file_name, strerror(errno));
-        return errno;
-    }
-
-    return 0;
-}
-
-/**
  * @brief Prints capabilites of the camera, along with selected
  * recording modes.
  *
@@ -674,6 +640,40 @@ int acam_print_caps(const acam_camera_t *cam)
 }
 
 /**
+ * @brief Writes an image from the camera to a file. Hard-coded to use the camera struct's buffer
+ *
+ * @param cam pointer to the cam struct
+ * @param file_name the name of the file to which we will write the image from buffer
+ * @param buffsize
+ * @return int
+ */
+int acam_write_to_file(acam_camera_t *cam, const char *file_name)
+{
+    // write contents of buffer to local file
+    int outfd = open(file_name, O_RDWR | O_CREAT, 0644);
+    if (outfd == -1)
+    {
+        DEBUG_PRINT(stderr, "Problem opening file %s: %s\n", file_name, strerror(errno));
+        return errno;
+    }
+
+    int ret = write(outfd, cam->buffer, cam->bytesused);
+    if (ret == -1)
+    {
+        DEBUG_PRINT(stderr, "Problem writing to file %s: %s\n", file_name, strerror(errno));
+        return errno;
+    }
+    ret = close(outfd);
+    if (ret == -1)
+    {
+        DEBUG_PRINT(stderr, "Problem closing file %s: %s\n", file_name, strerror(errno));
+        return errno;
+    }
+
+    return 0;
+}
+
+/**
  * @brief Initializes the memory map that stores bytes captured by the camera.
  *
  * @param cam the pointer to the camera object.
@@ -727,6 +727,18 @@ int acam_capture_image(acam_camera_t *cam, const char *file_name)
 {
     assert(cam && file_name);
 
+    if (cam->buffer != NULL)
+    { // we need to free up the memory in the camera's buffer
+        // free the mapped memory
+        int ret = munmap(cam->buffer, sizeof(cam->buffer));
+        if (ret == -1)
+        {
+            DEBUG_PRINT(stderr, "Error unmapping memeory for user-pointer");
+            return ENOMEM;
+        }
+        cam->buffer = NULL;
+    }
+
     init_mmap(cam);
 
     struct v4l2_buffer buf = {0};
@@ -763,10 +775,12 @@ int acam_capture_image(acam_camera_t *cam, const char *file_name)
         return errno;
     }
 
-    // write contents of buffer to local file:
-    int ret = write_to_file(cam, file_name, buf.bytesused);
-    if (ret != 0){
-        //we failed our write to file
+    //write contents of buffer to local file:
+    cam->bytesused = buf.bytesused;
+    int ret = acam_write_to_file(cam, file_name);
+    if (ret != 0)
+    {
+        // we failed our write to file
         return ret;
     }
 
@@ -785,14 +799,6 @@ int acam_capture_image(acam_camera_t *cam, const char *file_name)
     {
         DEBUG_PERROR("Requesting Buffer");
         return errno;
-    }
-
-    // free the mapped memory
-    ret = munmap(cam->buffer, sizeof(cam->buffer));
-    if (ret == -1)
-    {
-        DEBUG_PRINT(stderr, "Error unmapping memeory for user-pointer");
-        return ENOMEM;
     }
 
     return 0;
