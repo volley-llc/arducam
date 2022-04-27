@@ -34,6 +34,15 @@ extern "C" {
  * Used in arguments of get/set functions.
  * 
  */
+
+//the struct that we use to store the image buffers and their info
+typedef struct{
+    uint32_t *buf;
+    uint32_t bytes_used;
+    unsigned int buff_length;
+
+}acam_buffer_t;
+
 typedef const enum
 {
     ACAM_BRIGHTNESS = 0,
@@ -107,8 +116,6 @@ typedef struct
 {
     int fd;
     acam_ctrl_t ctrls[__ACAM_CTRL_COUNT];
-    uint32_t *buffer;
-    uint32_t bytesused;
 
 } acam_camera_t;
 
@@ -129,7 +136,10 @@ typedef struct
 
 acam_camera_t *acam_open(const char *cam_file, int *error); //start the camera
 int acam_close(acam_camera_t *cam); //close the camera
-int acam_capture_image(acam_camera_t *cam, const char *file_name); //captures a single image
+
+int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer); //captures a single image to a buffer
+int acam_write_to_file(const char *file_name, const acam_buffer_t *buffer);
+int acam_munmap(acam_buffer_t *buffer);
 
 int acam_get_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int *value); //get the current value of a control
 int acam_set_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int value); //set the value of a control
@@ -146,8 +156,6 @@ int acam_print_ctrl_all(const acam_camera_t *cam); //print values of all control
 void acam_print_defaults(const acam_camera_t *cam); //print default values of all controls
 void acam_print_bounds(const acam_camera_t *cam); //print upper and lower bounds of all controls
 int acam_print_caps(const acam_camera_t *cam); //print camera capabilities
-
-int acam_write_to_file(acam_camera_t *cam, const char *file_name);
 
 #ifdef __cplusplus
 }

@@ -7,6 +7,8 @@
 #define DEBUG_PRINT
 #define DEBUG_PERROR
 #endif
+
+
 /**
  * @brief Struct which maintains fields associated with different pixel formats
  *
@@ -65,7 +67,7 @@ static int get_fmt(const acam_camera_t *cam, int *value);
 static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag);
 static int get_queryctrl(acam_camera_t *cam, acam_ctrl_tag_t ctrl, struct v4l2_queryctrl *query_out);
 static int xioctl(int fd, int request, void *arg);
-static int init_mmap(acam_camera_t *cam);
+static int init_mmap(const acam_camera_t *cam, acam_buffer_t *buffer);
 
 /**
  * @brief Helps to interface between V4L2 query of selected pixel
@@ -515,8 +517,6 @@ acam_camera_t *acam_open(const char *cam_file, int *error)
     strcpy(cam->ctrls[ACAM_FORMAT].name, "Format");
     cam->ctrls[ACAM_FORMAT].default_val = ACAM_MJPEG_1920_1080;
 
-    cam->buffer = NULL;
-
     return cam;
 }
 
@@ -647,7 +647,7 @@ int acam_print_caps(const acam_camera_t *cam)
  * @param buffsize
  * @return int
  */
-int acam_write_to_file(acam_camera_t *cam, const char *file_name)
+int acam_write_to_file(const char *file_name, const acam_buffer_t *buffer)
 {
     // write contents of buffer to local file
     int outfd = open(file_name, O_RDWR | O_CREAT, 0644);
@@ -657,7 +657,7 @@ int acam_write_to_file(acam_camera_t *cam, const char *file_name)
         return errno;
     }
 
-    int ret = write(outfd, cam->buffer, cam->bytesused);
+    int ret = write(outfd, buffer->buf, buffer->bytes_used);
     if (ret == -1)
     {
         DEBUG_PRINT(stderr, "Problem writing to file %s: %s\n", file_name, strerror(errno));
@@ -680,7 +680,7 @@ int acam_write_to_file(acam_camera_t *cam, const char *file_name)
  * @return exit status. 0 on success, errno on ioctl failure, ENOMEM on failure
  * to map memory to user space.
  */
-static int init_mmap(acam_camera_t *cam)
+static int init_mmap(const acam_camera_t *cam, acam_buffer_t *buffer)
 {
     assert(cam);
 
@@ -705,8 +705,9 @@ static int init_mmap(acam_camera_t *cam)
         return errno;
     }
 
-    cam->buffer = mmap(NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, cam->fd, buf.m.offset);
-    if (cam->buffer == NULL)
+    buffer->buf = mmap(NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, cam->fd, buf.m.offset);
+    buffer->buff_length = buf.length;
+    if (buffer->buf == NULL)
     {
         DEBUG_PRINT(stderr, "Error mapping memory");
         return ENOMEM;
@@ -723,23 +724,23 @@ static int init_mmap(acam_camera_t *cam)
  * @return exit status. 0 on success, errno on ioctl failure, ENOMEM on failure
  * to map/unmap memory to/from user space.
  */
-int acam_capture_image(acam_camera_t *cam, const char *file_name)
+int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer)
 {
-    assert(cam && file_name);
+    assert(cam);
 
-    if (cam->buffer != NULL)
-    { // we need to free up the memory in the camera's buffer
-        // free the mapped memory
-        int ret = munmap(cam->buffer, sizeof(cam->buffer));
-        if (ret == -1)
-        {
-            DEBUG_PRINT(stderr, "Error unmapping memeory for user-pointer");
-            return ENOMEM;
-        }
-        cam->buffer = NULL;
-    }
+    // if (buffer != NULL)
+    // { // we need to free up the memory in the camera's buffer
+    //     // free the mapped memory
+    //     int ret = munmap(buffer, sizeof(buffer));
+    //     if (ret == -1)
+    //     {
+    //         DEBUG_PRINT(stderr, "Error unmapping memeory for user-pointer");
+    //         return ENOMEM;
+    //     }
+    //     buffer = NULL;
+    // }
 
-    init_mmap(cam);
+    init_mmap(cam, buffer);
 
     struct v4l2_buffer buf = {0};
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -776,13 +777,13 @@ int acam_capture_image(acam_camera_t *cam, const char *file_name)
     }
 
     //write contents of buffer to local file:
-    cam->bytesused = buf.bytesused;
-    int ret = acam_write_to_file(cam, file_name);
-    if (ret != 0)
-    {
-        // we failed our write to file
-        return ret;
-    }
+    buffer->bytes_used = buf.bytesused;
+    // int ret = acam_write_to_file(cam, file_name);
+    // if (ret != 0)
+    // {
+    //     // we failed our write to file
+    //     return ret;
+    // }
 
     // clear buffers in the camera and turn streaming off
     if (-1 == xioctl(cam->fd, VIDIOC_STREAMOFF, &buf.type))
@@ -800,6 +801,17 @@ int acam_capture_image(acam_camera_t *cam, const char *file_name)
         DEBUG_PERROR("Requesting Buffer");
         return errno;
     }
+    
 
     return 0;
+}
+
+int acam_munmap(acam_buffer_t *buffer){
+    int ret = munmap(buffer, buffer->buff_length);
+    if (ret != 0){
+        return ret;
+        DEBUG_PRINT(stderr, "Error unmapping memory");
+    }
+    return 0;
+
 }
