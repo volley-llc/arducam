@@ -8,7 +8,6 @@
 #define DEBUG_PERROR
 #endif
 
-
 /**
  * @brief Struct which maintains fields associated with different pixel formats
  *
@@ -67,7 +66,6 @@ static int get_fmt(const acam_camera_t *cam, int *value);
 static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag);
 static int get_queryctrl(acam_camera_t *cam, acam_ctrl_tag_t ctrl, struct v4l2_queryctrl *query_out);
 static int xioctl(int fd, int request, void *arg);
-static int init_mmap(const acam_camera_t *cam, acam_buffer_t *buffer);
 
 /**
  * @brief Helps to interface between V4L2 query of selected pixel
@@ -133,6 +131,15 @@ static int get_fmt(const acam_camera_t *cam, int *value)
 static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag)
 {
     assert(cam);
+    struct v4l2_requestbuffers free = {0};
+    free.count = 0;
+    free.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    free.memory = V4L2_MEMORY_MMAP;
+    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &free))
+    {
+        DEBUG_PERROR("Requesting Buffer");
+        return errno;
+    }
 
     // set up struct that will be fed into camera's format register
     struct v4l2_format fmt = {0};
@@ -147,6 +154,17 @@ static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag)
         DEBUG_PERROR("Setting Pixel Format");
         return errno;
     }
+
+    struct v4l2_requestbuffers req = {0};
+    req.count = 1;
+    req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    req.memory = V4L2_MEMORY_MMAP;
+    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &req))
+    {
+        DEBUG_PERROR("Requesting Buffer");
+        return errno;
+    }
+
     return 0;
 }
 
@@ -517,6 +535,8 @@ acam_camera_t *acam_open(const char *cam_file, int *error)
     strcpy(cam->ctrls[ACAM_FORMAT].name, "Format");
     cam->ctrls[ACAM_FORMAT].default_val = ACAM_MJPEG_1920_1080;
 
+    cam->stream_on = 0;
+
     return cam;
 }
 
@@ -649,6 +669,7 @@ int acam_print_caps(const acam_camera_t *cam)
  */
 int acam_write_to_file(const char *file_name, const acam_buffer_t *buffer)
 {
+    assert(file_name && buffer);
     // write contents of buffer to local file
     int outfd = open(file_name, O_RDWR | O_CREAT, 0644);
     if (outfd == -1)
@@ -680,40 +701,43 @@ int acam_write_to_file(const char *file_name, const acam_buffer_t *buffer)
  * @return exit status. 0 on success, errno on ioctl failure, ENOMEM on failure
  * to map memory to user space.
  */
-static int init_mmap(const acam_camera_t *cam, acam_buffer_t *buffer)
+acam_buffer_t *acam_create_buffer(const acam_camera_t *cam, int *error)
 {
     assert(cam);
-
+    acam_buffer_t *buffer = malloc(sizeof(acam_buffer_t));
     struct v4l2_requestbuffers req = {0};
     req.count = 1;
     req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     req.memory = V4L2_MEMORY_MMAP;
-    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &req)) // this is the line, for some reason renders camera busy indefinitely
+    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &req))
     {
         DEBUG_PERROR("Requesting Buffer");
-        return errno;
+        *error = errno;
+        return NULL;
     }
 
-    struct v4l2_buffer buf = {0};
-    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    buf.memory = V4L2_MEMORY_MMAP;
-    buf.index = 0;
+    struct v4l2_buffer qbuf = {0};
+    qbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    qbuf.memory = V4L2_MEMORY_MMAP;
+    qbuf.index = 0;
 
-    if (-1 == xioctl(cam->fd, VIDIOC_QUERYBUF, &buf))
+    if (-1 == xioctl(cam->fd, VIDIOC_QUERYBUF, &qbuf))
     {
         DEBUG_PERROR("Querying Buffer");
-        return errno;
+        *error = errno;
+        return NULL;
     }
-
-    buffer->buf = mmap(NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, cam->fd, buf.m.offset);
-    buffer->buff_length = buf.length;
+    buffer->buf = mmap(NULL, qbuf.length, PROT_READ | PROT_WRITE, MAP_SHARED, cam->fd, qbuf.m.offset);
+    buffer->bytes_used = 0;
+    buffer->buff_length = qbuf.length;
     if (buffer->buf == NULL)
     {
         DEBUG_PRINT(stderr, "Error mapping memory");
-        return ENOMEM;
+        *error =  ENOMEM;
+        return NULL;
     }
 
-    return 0;
+    return buffer;
 }
 
 /**
@@ -722,25 +746,29 @@ static int init_mmap(const acam_camera_t *cam, acam_buffer_t *buffer)
  * @param cam the pointer to the camera file
  * @param file_name The file destination for the image.
  * @return exit status. 0 on success, errno on ioctl failure, ENOMEM on failure
- * to map/unmap memory to/from user space.
+ * to map/unmap memory to/from user space, EINVAL if the buffer is of incorrect
+ * size.
  */
 int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer)
 {
     assert(cam);
+    //make sure cam's pixel format matches the buffer's pixel format
+    struct v4l2_buffer qbuf = {0};
+    qbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    qbuf.memory = V4L2_MEMORY_MMAP;
+    qbuf.index = 0;
 
-    // if (buffer != NULL)
-    // { // we need to free up the memory in the camera's buffer
-    //     // free the mapped memory
-    //     int ret = munmap(buffer, sizeof(buffer));
-    //     if (ret == -1)
-    //     {
-    //         DEBUG_PRINT(stderr, "Error unmapping memeory for user-pointer");
-    //         return ENOMEM;
-    //     }
-    //     buffer = NULL;
-    // }
+    if (-1 == xioctl(cam->fd, VIDIOC_QUERYBUF, &qbuf))
+    {
+        DEBUG_PERROR("Querying Buffer");
+        return errno;
+    }
 
-    init_mmap(cam, buffer);
+    if (buffer->buff_length != qbuf.length){
+        DEBUG_PRINT(stderr, "buffer is incorrectly formatted for current camera pix format");
+        return EINVAL;
+    }
+    //done checking
 
     struct v4l2_buffer buf = {0};
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -776,14 +804,8 @@ int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer)
         return errno;
     }
 
-    //write contents of buffer to local file:
+    // keep track of how many bytes were used
     buffer->bytes_used = buf.bytesused;
-    // int ret = acam_write_to_file(cam, file_name);
-    // if (ret != 0)
-    // {
-    //     // we failed our write to file
-    //     return ret;
-    // }
 
     // clear buffers in the camera and turn streaming off
     if (-1 == xioctl(cam->fd, VIDIOC_STREAMOFF, &buf.type))
@@ -792,26 +814,18 @@ int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer)
         return errno;
     }
 
-    struct v4l2_requestbuffers free = {0};
-    free.count = 0;
-    free.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    free.memory = V4L2_MEMORY_MMAP;
-    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &free)) // this is the line, for some reason renders camera busy indefinitely
-    {
-        DEBUG_PERROR("Requesting Buffer");
-        return errno;
-    }
-    
-
     return 0;
 }
 
-int acam_munmap(acam_buffer_t *buffer){
+int acam_destroy_buffer(acam_buffer_t *buffer)
+{
+    assert(buffer);
     int ret = munmap(buffer, buffer->buff_length);
-    if (ret != 0){
+    if (ret != 0)
+    {
         return ret;
         DEBUG_PRINT(stderr, "Error unmapping memory");
     }
+    free(buffer);
     return 0;
-
 }

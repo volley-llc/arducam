@@ -41,7 +41,7 @@ typedef struct{
     uint32_t bytes_used;
     unsigned int buff_length;
 
-}acam_buffer_t;
+} acam_buffer_t;
 
 typedef const enum
 {
@@ -115,6 +115,7 @@ typedef struct
 typedef struct
 {
     int fd;
+    int stream_on;
     acam_ctrl_t ctrls[__ACAM_CTRL_COUNT];
 
 } acam_camera_t;
@@ -139,7 +140,8 @@ int acam_close(acam_camera_t *cam); //close the camera
 
 int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer); //captures a single image to a buffer
 int acam_write_to_file(const char *file_name, const acam_buffer_t *buffer);
-int acam_munmap(acam_buffer_t *buffer);
+acam_buffer_t *acam_create_buffer(const acam_camera_t *cam, int *error);
+int acam_destroy_buffer(acam_buffer_t *buffer);
 
 int acam_get_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int *value); //get the current value of a control
 int acam_set_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int value); //set the value of a control
