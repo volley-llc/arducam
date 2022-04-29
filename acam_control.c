@@ -130,12 +130,13 @@ static int get_fmt(const acam_camera_t *cam, int *value)
  */
 static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag)
 {
+    //before setting a camera's format, we must reset the requestbuffer
     assert(cam);
-    struct v4l2_requestbuffers free = {0};
-    free.count = 0;
-    free.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    free.memory = V4L2_MEMORY_MMAP;
-    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &free))
+    struct v4l2_requestbuffers freebuf = {0};
+    freebuf.count = 0;
+    freebuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    freebuf.memory = V4L2_MEMORY_MMAP;
+    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &freebuf))
     {
         DEBUG_PERROR("Requesting Buffer");
         return errno;
@@ -152,16 +153,6 @@ static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag)
     if (-1 == ioctl(cam->fd, VIDIOC_S_FMT, &fmt))
     {
         DEBUG_PERROR("Setting Pixel Format");
-        return errno;
-    }
-
-    struct v4l2_requestbuffers req = {0};
-    req.count = 1;
-    req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    req.memory = V4L2_MEMORY_MMAP;
-    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &req))
-    {
-        DEBUG_PERROR("Requesting Buffer");
         return errno;
     }
 
@@ -550,6 +541,16 @@ int acam_close(acam_camera_t *cam)
 {
 
     assert(cam);
+    //make sure that we reset requestbuffer to 0.
+    struct v4l2_requestbuffers freebuf = {0};
+    freebuf.count = 0;
+    freebuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    freebuf.memory = V4L2_MEMORY_MMAP;
+    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &freebuf))
+    {
+        DEBUG_PERROR("Freeing Buffer");
+        return errno;
+    }
 
     int ret = close(cam->fd);
     if (ret == -1)
@@ -729,13 +730,13 @@ acam_buffer_t *acam_create_buffer(const acam_camera_t *cam, int *error)
     }
     buffer->buf = mmap(NULL, qbuf.length, PROT_READ | PROT_WRITE, MAP_SHARED, cam->fd, qbuf.m.offset);
     buffer->bytes_used = 0;
-    buffer->buff_length = qbuf.length;
+    buffer->length = qbuf.length;
     if (buffer->buf == NULL)
     {
         DEBUG_PRINT(stderr, "Error mapping memory");
         *error =  ENOMEM;
         return NULL;
-    }
+    }    
 
     return buffer;
 }
@@ -764,7 +765,7 @@ int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer)
         return errno;
     }
 
-    if (buffer->buff_length != qbuf.length){
+    if (buffer->length != qbuf.length){
         DEBUG_PRINT(stderr, "buffer is incorrectly formatted for current camera pix format");
         return EINVAL;
     }
@@ -820,7 +821,7 @@ int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer)
 int acam_destroy_buffer(acam_buffer_t *buffer)
 {
     assert(buffer);
-    int ret = munmap(buffer, buffer->buff_length);
+    int ret = munmap(buffer, buffer->length);
     if (ret != 0)
     {
         return ret;

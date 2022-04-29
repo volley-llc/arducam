@@ -37,9 +37,9 @@ extern "C" {
 
 //the struct that we use to store the image buffers and their info
 typedef struct{
-    uint32_t *buf;
+    char *buf;
     uint32_t bytes_used;
-    unsigned int buff_length;
+    unsigned int length;
 
 } acam_buffer_t;
 
@@ -139,9 +139,9 @@ acam_camera_t *acam_open(const char *cam_file, int *error); //start the camera
 int acam_close(acam_camera_t *cam); //close the camera
 
 int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer); //captures a single image to a buffer
-int acam_write_to_file(const char *file_name, const acam_buffer_t *buffer);
-acam_buffer_t *acam_create_buffer(const acam_camera_t *cam, int *error);
-int acam_destroy_buffer(acam_buffer_t *buffer);
+int acam_write_to_file(const char *file_name, const acam_buffer_t *buffer); //writes contents of a buffer to an external file
+acam_buffer_t *acam_create_buffer(const acam_camera_t *cam, int *error); //creates a buffer of size corresponding with current pixel format
+int acam_destroy_buffer(acam_buffer_t *buffer); //destroys buffer 
 
 int acam_get_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int *value); //get the current value of a control
 int acam_set_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int value); //set the value of a control
