@@ -10,20 +10,28 @@ In order to use to use the camera and take a picture with it, the following acti
 3.  The image must be written to the buffer.
 
 When finished, the memory for the camera and the buffer must be freed using their respective freeing functions. Here is a typical example of what code using this library looks like:
+
 `int error = 0`;
+
 `acam_camera_t *x = acam_open("/dev/video0", &error);` Open the arducam
+
 `acam_set_ctrl(x, ACAM_FORMAT, ACAM_MJPEG_1920_1080);` Set control values that you would like to modify from their defaults. This is not necessary
+
 `acam_buffer_t *buffer = acam_create_buffer(x, &error);`create a buffer
+
 `acam_capture_image(x, buffer);` capture an image
+
 `acam_write_to_file("image.jpg", buffer);` perform your desired action with the buffer
-`acam_destroy_buffer(buffer);` //deallocate the buffer
-`acam_close(x);`//deallocate the camera
+
+`acam_destroy_buffer(buffer);` deallocate the buffer
+
+`acam_close(x);`deallocate the camera
 
 Further notes/warnings about usage:
 * It is best practice to set pixel format before creating buffers. This will ensure that all buffers are of the correct length to store images. If pixel format must be changed, it is encouraged to close and reopen the camera using acam_open() and acam_close() before changing the pixel format.
 * If multithreading, changing the camera's pixel format at the same time as a buffer is being created/a picture is being taken will result in undefined behavior. 
 ___________________________________________________________________
-#API
+# API
 
 #### acam_camera_t *acam_open(const char *cam_file, int *error)
 Boots the camera.
