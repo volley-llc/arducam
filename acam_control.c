@@ -74,7 +74,7 @@ static int xioctl(int fd, int request, void *arg);
  * @param acam_fmt_type The V4L2_PIX_FMT enum for either YUYV or MJPEG.
  * @param height The height of the aspect ratio for above pixel format.
  * @return The format ENUM associated with the V4L2 pixel format/aspect ratio
- * (a 0-11 int). -1 if the acam_fmt_type and pixel height do not match the ARDUCAM's specs.
+ * (a 0-11 int). __ACAM_FMT_INVALID if the acam_fmt_type and pixel height do not match the ARDUCAM's specs.
  */
 static acam_fmt_t get_acam_fmt_tag(int acam_fmt_type, int height)
 {
@@ -122,7 +122,11 @@ static int get_fmt(const acam_camera_t *cam, int *value)
     return 0;
 }
 /**
- * @brief Set the fmt object
+ * @brief Sets the camera's format. Used in set_ctrl in case of ctrl being FORMAT.
+ * Uses cam->stream_on to maintain current requestbuffer count of the camera.
+ * This enables setting video format in between video captures. Note: this function is
+ * NOT threadsafe -- undefined behavior arises when this function runs concurrently with
+ * acam_capture_image and acam_create_buffer.
  *
  * @param cam pointer to a cam struct
  * @param acam_fmt_tag ENUM for camera format to which the camera will be set
@@ -131,15 +135,20 @@ static int get_fmt(const acam_camera_t *cam, int *value)
 static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag)
 {
     //before setting a camera's format, we must reset the requestbuffer
+    //This enables us to change the format register if we have recently
+    //set up a new buffer, else does nothing.
     assert(cam);
-    struct v4l2_requestbuffers freebuf = {0};
-    freebuf.count = 0;
-    freebuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    freebuf.memory = V4L2_MEMORY_MMAP;
-    if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &freebuf))
-    {
-        DEBUG_PERROR("Requesting Buffer");
-        return errno;
+
+    if (cam->stream_on == 1){
+        struct v4l2_requestbuffers freebuf = {0};
+        freebuf.count = 0;
+        freebuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        freebuf.memory = V4L2_MEMORY_MMAP;
+        if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &freebuf))
+        {
+            DEBUG_PERROR("Freeing Buffer");
+            return errno;
+        }
     }
 
     // set up struct that will be fed into camera's format register
@@ -155,12 +164,24 @@ static int set_fmt(const acam_camera_t *cam, acam_fmt_t acam_fmt_tag)
         DEBUG_PERROR("Setting Pixel Format");
         return errno;
     }
+    if (cam->stream_on == 1){
+            struct v4l2_requestbuffers freebuf = {0};
+            freebuf.count = 1;
+            freebuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            freebuf.memory = V4L2_MEMORY_MMAP;
+            if (-1 == xioctl(cam->fd, VIDIOC_REQBUFS, &freebuf))
+            {
+                DEBUG_PERROR("Freeing Buffer");
+                return errno;
+            }
+        }
+
 
     return 0;
 }
 
 /**
- * @brief Get's the value of a control.
+ * @brief Gets the value of a control.
  *
  * @param cam a pointer to the cam struct
  * @param ctrl the acam_ctrl_tag ENUM
@@ -290,7 +311,7 @@ int acam_save_struct(const acam_camera_t *cam, acam_ctrls_struct *ctrls)
 }
 
 /**
- * @brief Saves default values of camera controls to a acam_ctrls_struct.
+ * @brief Saves default values of camera controls to an acam_ctrls_struct.
  *
  * @param cam pointer to the cam struct.
  * @param ctrls the acam_ctrls_struct to which the default values will be saved
@@ -309,7 +330,7 @@ void acam_save_default_struct(const acam_camera_t *cam, acam_ctrls_struct *ctrls
  * @brief Loads values from a acam_ctrls_struct into the camera.
  *
  * @param cam a pointer to a camera struct
- * @param ctrls
+ * @param ctrls The struct of camera controls that will be loaded into the camera's control registers.
  * @return exit status. 0 on success, errno on failure.
  */
 int acam_load_struct(const acam_camera_t *cam, const acam_ctrls_struct *ctrls)
@@ -477,6 +498,8 @@ static int get_queryctrl(acam_camera_t *cam, acam_ctrl_tag_t ctrl, struct v4l2_q
  * cam->fd: the camera's file descriptor.
  * cam->ctrls: The list of controls belonging to the minicam. The control struct includes name and default/min/max values.
  * cam->buffer: The memory map which is used to store bits before they are written to an image file.
+ * cam->stream_on: Turns on once a buffer has been requested. Enables format to be changed after creating a buffer,
+ * although this is highly discouraged.
  *
  * @param cam_file the string for the file name of the camera. Usually one of the video files in the /dev mount.
  * @param error Pointer to an integer which will store the error number on failure.
@@ -525,7 +548,6 @@ acam_camera_t *acam_open(const char *cam_file, int *error)
     }
     strcpy(cam->ctrls[ACAM_FORMAT].name, "Format");
     cam->ctrls[ACAM_FORMAT].default_val = ACAM_MJPEG_1920_1080;
-
     cam->stream_on = 0;
 
     return cam;
@@ -661,12 +683,13 @@ int acam_print_caps(const acam_camera_t *cam)
 }
 
 /**
- * @brief Writes an image from the camera to a file. Hard-coded to use the camera struct's buffer
+ * @brief Writes an image from the camera to a file. Needs a buffer to have been
+ * created with acam_create_buffer. This buffer must be passed into the function.
  *
  * @param cam pointer to the cam struct
- * @param file_name the name of the file to which we will write the image from buffer
- * @param buffsize
- * @return int
+ * @param buffer The acam_buffer_t which will store the image. The image bytes are stored
+ * in buffer->buf.
+ * @return int errno on failure, 0 on success.
  */
 int acam_write_to_file(const char *file_name, const acam_buffer_t *buffer)
 {
@@ -696,15 +719,18 @@ int acam_write_to_file(const char *file_name, const acam_buffer_t *buffer)
 }
 
 /**
- * @brief Initializes the memory map that stores bytes captured by the camera.
+ * @brief Initializes the buffer that stores bytes captured by the camera. Multiple
+ * buffers exist at any given time.
  *
  * @param cam the pointer to the camera object.
- * @return exit status. 0 on success, errno on ioctl failure, ENOMEM on failure
- * to map memory to user space.
+ * @param error keeps track of error code on failure.
+ * @return acam_buffer_t, which stores a buffer calibrated for the camera's
+ * current pixel format/aspect ratio.
  */
-acam_buffer_t *acam_create_buffer(const acam_camera_t *cam, int *error)
+acam_buffer_t *acam_create_buffer(acam_camera_t *cam, int *error)
 {
     assert(cam);
+
     acam_buffer_t *buffer = malloc(sizeof(acam_buffer_t));
     struct v4l2_requestbuffers req = {0};
     req.count = 1;
@@ -716,6 +742,8 @@ acam_buffer_t *acam_create_buffer(const acam_camera_t *cam, int *error)
         *error = errno;
         return NULL;
     }
+
+    cam->stream_on = 1; //is a camera global, but is thread safe
 
     struct v4l2_buffer qbuf = {0};
     qbuf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
@@ -736,16 +764,23 @@ acam_buffer_t *acam_create_buffer(const acam_camera_t *cam, int *error)
         DEBUG_PRINT(stderr, "Error mapping memory");
         *error =  ENOMEM;
         return NULL;
-    }    
+    }
+
+    int ret = acam_capture_image(cam, buffer);
+    if (ret != 0){
+        DEBUG_PRINT(stderr, "Unable to take picture with buffer");
+        *error = ret;
+        return NULL;
+    }
 
     return buffer;
 }
 
 /**
- * @brief Captures a single image and writes it to @param file_name
+ * @brief Captures a single image and writes it to @param buffer
  *
  * @param cam the pointer to the camera file
- * @param file_name The file destination for the image.
+ * @param buffer The buffer which will store the captured image.
  * @return exit status. 0 on success, errno on ioctl failure, ENOMEM on failure
  * to map/unmap memory to/from user space, EINVAL if the buffer is of incorrect
  * size.
@@ -818,13 +853,20 @@ int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer)
     return 0;
 }
 
+/**
+ * @brief Deallocates memory for a buffer created with 
+ * acam_create_buffer.
+ * 
+ * @param buffer The buffer struct to be destroyed
+ * @return errno on munmap failure, 0 on success.
+ */
 int acam_destroy_buffer(acam_buffer_t *buffer)
 {
     assert(buffer);
     int ret = munmap(buffer, buffer->length);
     if (ret != 0)
     {
-        return ret;
+        return errno;
         DEBUG_PRINT(stderr, "Error unmapping memory");
     }
     free(buffer);

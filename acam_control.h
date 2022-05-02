@@ -29,6 +29,7 @@ extern "C" {
 
 #include <linux/usb/ch9.h>
 #include <json-c/json.h>
+
 /**
  * @brief List of camera controls, including format.
  * Used in arguments of get/set functions.
@@ -140,7 +141,7 @@ int acam_close(acam_camera_t *cam); //close the camera
 
 int acam_capture_image(const acam_camera_t *cam, acam_buffer_t *buffer); //captures a single image to a buffer
 int acam_write_to_file(const char *file_name, const acam_buffer_t *buffer); //writes contents of a buffer to an external file
-acam_buffer_t *acam_create_buffer(const acam_camera_t *cam, int *error); //creates a buffer of size corresponding with current pixel format
+acam_buffer_t *acam_create_buffer(acam_camera_t *cam, int *error); //creates a buffer of size corresponding with current pixel format
 int acam_destroy_buffer(acam_buffer_t *buffer); //destroys buffer 
 
 int acam_get_ctrl(const acam_camera_t *cam, acam_ctrl_tag_t ctrl, int *value); //get the current value of a control
