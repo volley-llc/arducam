@@ -28,7 +28,8 @@ extern "C" {
 #include <linux/types.h>
 
 #include <linux/usb/ch9.h>
-#include <json-c/json.h>
+// Commenting this lib out as we are using nlohmann json
+// #include <json-c/json.h>
 
 /**
  * @brief List of camera controls, including format.
